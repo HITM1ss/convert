@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Format Forge</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="app-shell">
+      <aside class="format-sidebar" aria-label="图片类型">
+        <section class="format-section">
+          <button class="sidebar-section-title" id="format-section-toggle" aria-expanded="true" aria-controls="format-nav">图片<span class="format-section-indicator" aria-hidden="true"></span></button>
+          <nav class="format-nav" id="format-nav"></nav>
+        </section>
+      </aside>
+      <section class="workspace">
+        <div class="workspace-actions">
+          <button class="action-button" id="clear-button" title="清空文件" aria-label="清空文件">&#215;</button>
+        </div>
+        <div class="file-list" id="file-list" aria-live="polite"></div>
+        <footer class="conversion-bar">
+          <input id="quality-input" type="range" min="0" max="100" value="88" aria-label="图片质量" />
+          <output id="quality-value">88</output>
+          <span id="file-count">0</span>
+          <button class="convert-button" id="convert-button" disabled title="选择导出路径" aria-label="选择导出路径"><span>选择路径</span><span aria-hidden="true">&#8594;</span></button>
+        </footer>
+        <button class="message-bar" id="status-message" type="button" title="打开日志文件夹" aria-label="打开日志文件夹" aria-live="polite">准备就绪</button>
+      </section>
+      <aside class="task-queue" aria-label="任务队列">
+        <header class="task-queue-header">
+          <span>任务队列</span>
+          <span id="queue-progress">0/0</span>
+        </header>
+        <div class="task-queue-list" id="task-queue-list" aria-live="polite"></div>
+      </aside>
+    </main>
+  </body>
+</html>
