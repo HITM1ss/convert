@@ -33,6 +33,8 @@ jobs:
       - run: npm run check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
       - run: npm run tauri build -- --target ${{ matrix.target }}
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: format-forge-${{ matrix.target }}
