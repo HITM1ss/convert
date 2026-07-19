@@ -30,7 +30,8 @@ where
         .map(|source_path| {
             let source = Path::new(&source_path);
             let output = unique_output_path(output_directory, source, request.target_format.extension());
-            let result = match RasterImageConverter::convert(source, &output, request.target_format, request.quality) {
+            let crop_region = request.crop_regions.get(&source_path);
+            let result = match RasterImageConverter::convert(source, &output, request.target_format, request.quality, request.compression_mode, crop_region, request.ico_size) {
                 Ok(()) => ConversionResult {
                     source_path,
                     output_path: Some(output.to_string_lossy().into_owned()),

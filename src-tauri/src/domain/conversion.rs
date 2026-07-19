@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -10,6 +12,13 @@ pub enum SupportedFormat {
     Tiff,
     Ico,
     Avif,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompressionMode {
+    Lossy,
+    Lossless,
 }
 
 impl SupportedFormat {
@@ -37,6 +46,29 @@ pub struct ConversionRequest {
     pub output_directory: String,
     pub target_format: SupportedFormat,
     pub quality: u8,
+    #[serde(default = "default_compression_mode")]
+    pub compression_mode: CompressionMode,
+    #[serde(default)]
+    pub crop_regions: HashMap<String, CropRegion>,
+    #[serde(default = "default_ico_size")]
+    pub ico_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CropRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn default_ico_size() -> u32 {
+    256
+}
+
+fn default_compression_mode() -> CompressionMode {
+    CompressionMode::Lossy
 }
 
 #[derive(Debug, Serialize)]
