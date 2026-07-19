@@ -10,13 +10,7 @@ pub struct RasterImageConverter;
 
 impl RasterImageConverter {
     pub fn convert(source: &Path, output: &Path, format: SupportedFormat, quality: u8, compression_mode: CompressionMode, crop_region: Option<&CropRegion>, ico_size: u32) -> Result<(), String> {
-        let input_format = image::ImageFormat::from_path(source)
-            .map_err(|_| "无法识别输入文件格式。".to_owned())?;
-        if matches!(input_format, ImageFormat::Gif) {
-            return Err("暂不支持动画图片转换。".to_owned());
-        }
-
-        let image = image::open(source).map_err(|error| format!("无法读取图片：{error}"))?;
+        let image = read_image(source)?;
         let image = match format {
             SupportedFormat::Ico => {
                 let cropped = match crop_region {
@@ -50,11 +44,42 @@ impl RasterImageConverter {
                 image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut encoded, 10, quality)
                     .write_image(rgba.as_raw(), rgba.width(), rgba.height(), ExtendedColorType::Rgba8)
             }
+            SupportedFormat::Heic => image.write_with_encoder(
+                heif::HeifEncoder::new(&mut encoded).with_quality(quality),
+            ),
             target => image.write_to(&mut Cursor::new(&mut encoded), image_format(target)),
         }
         .map_err(|error| format!("无法编码目标图片：{error}"))?;
         fs::write(output, encoded).map_err(|error| format!("无法写入临时文件：{error}"))
     }
+}
+
+pub fn image_dimensions(source: &Path) -> Option<(u32, u32)> {
+    if is_heif(source) {
+        let encoded = fs::read(source).ok()?;
+        let info = heif::probe(&encoded).ok()?;
+        Some((info.width, info.height))
+    } else {
+        image::image_dimensions(source).ok()
+    }
+}
+
+fn read_image(source: &Path) -> Result<DynamicImage, String> {
+    if is_heif(source) {
+        let encoded = fs::read(source).map_err(|error| format!("无法读取 HEIC 图片：{error}"))?;
+        return heif::decode(&encoded).map_err(|error| format!("无法解码 HEIC 图片：{error}"));
+    }
+
+    let input_format = image::ImageFormat::from_path(source)
+        .map_err(|_| "无法识别输入文件格式。".to_owned())?;
+    if matches!(input_format, ImageFormat::Gif) {
+        return Err("暂不支持动画图片转换。".to_owned());
+    }
+    image::open(source).map_err(|error| format!("无法读取图片：{error}"))
+}
+
+fn is_heif(source: &Path) -> bool {
+    matches!(source.extension().and_then(|extension| extension.to_str()), Some(extension) if extension.eq_ignore_ascii_case("heic") || extension.eq_ignore_ascii_case("heif"))
 }
 
 fn encode_lossy_webp(image: &DynamicImage, encoded: &mut Vec<u8>, quality: u8) -> image::ImageResult<()> {
@@ -93,5 +118,6 @@ fn image_format(format: SupportedFormat) -> ImageFormat {
         SupportedFormat::Tiff => ImageFormat::Tiff,
         SupportedFormat::Ico => ImageFormat::Ico,
         SupportedFormat::Avif => ImageFormat::Avif,
+        SupportedFormat::Heic => unreachable!("HEIC uses the dedicated heif encoder"),
     }
 }

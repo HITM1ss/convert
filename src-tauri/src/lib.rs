@@ -71,7 +71,7 @@ fn file_sizes(paths: Vec<String>) -> Vec<Option<u64>> {
     fn image_dimensions(paths: Vec<String>) -> Vec<Option<(u32, u32)>> {
         paths
         .into_iter()
-        .map(|path| image::image_dimensions(path).ok())
+        .map(|path| infrastructure::raster_image_converter::image_dimensions(std::path::Path::new(&path)))
         .collect()
     }
 

@@ -12,6 +12,7 @@ pub enum SupportedFormat {
     Tiff,
     Ico,
     Avif,
+    Heic,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -23,7 +24,7 @@ pub enum CompressionMode {
 
 impl SupportedFormat {
     pub fn all() -> Vec<Self> {
-        vec![Self::Jpeg, Self::Png, Self::Webp, Self::Bmp, Self::Tiff, Self::Ico, Self::Avif]
+        vec![Self::Jpeg, Self::Png, Self::Webp, Self::Bmp, Self::Tiff, Self::Ico, Self::Avif, Self::Heic]
     }
 
     pub fn extension(self) -> &'static str {
@@ -35,6 +36,7 @@ impl SupportedFormat {
             Self::Tiff => "tiff",
             Self::Ico => "ico",
             Self::Avif => "avif",
+            Self::Heic => "heic",
         }
     }
 }

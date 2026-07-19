@@ -4,13 +4,13 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-type Format = "jpeg" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif";
+type Format = "jpeg" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic";
 type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed"; message?: string };
 type Dimensions = [number, number];
 type CropRegion = { x: number; y: number; width: number; height: number };
 type CompressionMode = "lossy" | "lossless";
 
-const formats: Record<Format, string> = { jpeg: "JPG", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF" };
+const formats: Record<Format, string> = { jpeg: "JPG", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC" };
 let sourcePaths: string[] = [];
 let outputDirectory = "";
 
@@ -148,7 +148,7 @@ async function addSourcePaths(paths: string[]) {
 }
 
 async function addFiles() {
-  const selected = await open({ multiple: true, directory: false, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif"] }] });
+  const selected = await open({ multiple: true, directory: false, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif"] }] });
   if (!selected) return;
   await addSourcePaths(Array.isArray(selected) ? selected : [selected]);
 }
