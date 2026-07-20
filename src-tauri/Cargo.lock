@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "format-forge"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "heif-rs",
  "image",

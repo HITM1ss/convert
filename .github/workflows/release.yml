@@ -31,12 +31,22 @@ jobs:
       - run: npm run check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
       - run: npm run tauri build -- --target ${{ matrix.target }}
+        if: runner.os != 'macOS'
+      - name: Build macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          if [[ -n "${APPLE_CERTIFICATE:-}" ]]; then
+            npm run tauri build -- --target ${{ matrix.target }}
+          else
+            env -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID \
+              APPLE_SIGNING_IDENTITY=- npm run tauri build -- --target ${{ matrix.target }}
+          fi
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && (secrets.APPLE_SIGNING_IDENTITY || '-') || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - uses: actions/upload-artifact@v4
         with:
