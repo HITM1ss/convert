@@ -2,8 +2,7 @@
 
 离线、跨平台的静态图片格式转换器。支持批量转换 JPG、PNG、WebP、BMP、TIFF、ICO、AVIF 和 iPhone 常用的 HEIC/HEIF；所有文件仅在本机处理，源文件不会被覆盖。
 
-![Format Forge 界面预览](doc/0.1.1.png)
-
+![Format Forge v0.1.3界面预览](doc/0.1.3.png)
 
 ## 开发
 
