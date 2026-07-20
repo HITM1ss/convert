@@ -8,6 +8,7 @@ type Format = "jpeg" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic"
 type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed"; message?: string };
 type Dimensions = [number, number];
 type CropRegion = { x: number; y: number; width: number; height: number };
+type OutputDimensions = { width: number; height: number };
 type CompressionMode = "lossy" | "lossless";
 
 const formats: Record<Format, string> = { jpeg: "JPG", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC" };
@@ -27,6 +28,13 @@ const icoCropImage = byId<HTMLImageElement>("ico-crop-image");
 const icoCropStage = byId<HTMLDivElement>("ico-crop-stage");
 const icoCropSelection = byId<HTMLDivElement>("ico-crop-selection");
 const icoCropConfirm = byId<HTMLButtonElement>("ico-crop-confirm");
+const imageCropDialog = byId<HTMLDialogElement>("image-crop-dialog");
+const imageCropImage = byId<HTMLImageElement>("image-crop-image");
+const imageCropStage = byId<HTMLDivElement>("image-crop-stage");
+const imageCropSelection = byId<HTMLDivElement>("image-crop-selection");
+const imageCropConfirm = byId<HTMLButtonElement>("image-crop-confirm");
+const imageCropWidthInput = byId<HTMLInputElement>("image-crop-width-input");
+const imageCropHeightInput = byId<HTMLInputElement>("image-crop-height-input");
 const icoSizeOptions = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="ico-size"]'));
 let targetFormat: Format = "jpeg";
 let selectedCompressionMode: CompressionMode = "lossy";
@@ -34,6 +42,7 @@ let isFormatSectionExpanded = true;
 const fileSizes = new Map<string, number>();
 const imageDimensions = new Map<string, Dimensions>();
 const icoCropRegions = new Map<string, CropRegion>();
+const outputDimensions = new Map<string, OutputDimensions>();
 const taskResults = new Map<string, Result>();
 let isConverting = false;
 let statusScrollFrame: number | undefined;
@@ -41,9 +50,13 @@ let icoCropQueue: string[] = [];
 let icoCropIndex = 0;
 let formatBeforeIco: Format = "jpeg";
 let icoSize = 256;
-let cropDisplayRegion = { x: 0, y: 0, width: 0, height: 0 };
-let cropImageBounds = { x: 0, y: 0, width: 0, height: 0 };
-let cropPointer: { mode: "move" | "resize"; startX: number; startY: number; region: typeof cropDisplayRegion } | null = null;
+let icoCropDisplayRegion = { x: 0, y: 0, width: 0, height: 0 };
+let icoCropImageBounds = { x: 0, y: 0, width: 0, height: 0 };
+let icoCropPointer: { startX: number; startY: number; region: typeof icoCropDisplayRegion } | null = null;
+let imageCropPath: string | null = null;
+let imageCropDisplayRegion = { x: 0, y: 0, width: 0, height: 0 };
+let imageCropImageBounds = { x: 0, y: 0, width: 0, height: 0 };
+let imageCropPointer: { mode: "move" | "resize"; handle: "x" | "y" | "corner" | null; startX: number; startY: number; region: typeof imageCropDisplayRegion } | null = null;
 
 function formatFileSize(bytes?: number) {
   if (bytes === undefined) return "--";
@@ -119,7 +132,7 @@ function renderFiles(results: Result[] = []) {
     const result = resultByPath.get(path);
     const name = path.split(/[\\/]/).pop() ?? path;
     const state = result ? (result.status === "completed" ? "完成" : result.message ?? "失败") : "待处理";
-    return `<div class="file-row"><span class="file-thumbnail"><img src="${convertFileSrc(path)}" alt="" /></span><span class="file-name">${name}</span><span class="file-state ${result?.status ?? "pending"}">${state}</span><span class="file-size">${formatFileSize(fileSizes.get(path))}</span><button class="remove-file-button" type="button" data-file-index="${index}" title="移除文件" aria-label="移除 ${name}">&times;</button></div>`;
+    return `<div class="file-row"><span class="file-thumbnail"><img src="${convertFileSrc(path)}" alt="" /></span><span class="file-name">${name}</span><span class="file-state ${result?.status ?? "pending"}">${state}</span><span class="file-size">${formatFileSize(fileSizes.get(path))}</span><button class="crop-file-button" type="button" data-file-index="${index}" title="裁剪图片" aria-label="裁剪 ${name}">裁剪</button><button class="remove-file-button" type="button" data-file-index="${index}" title="移除文件" aria-label="移除 ${name}">&times;</button></div>`;
   }).join("");
   fileList.innerHTML = fileRows
     ? `${fileRows}<button class="add-file-button" type="button"><span aria-hidden="true">+</span>添加文件</button>`
@@ -175,7 +188,7 @@ async function convert() {
   renderTaskQueue();
   statusMessage.textContent = "转换中，点击打开日志文件夹";
   const cropRegions = Object.fromEntries(icoCropRegions);
-  const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(qualityInput.value), compressionMode: selectedCompressionMode, cropRegions, icoSize } });
+  const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(qualityInput.value), compressionMode: selectedCompressionMode, cropRegions, outputDimensions: Object.fromEntries(outputDimensions), icoSize } });
   isConverting = false;
   results.forEach((result) => taskResults.set(result.sourcePath, result));
   renderFiles(results);
@@ -207,13 +220,12 @@ function setFormatSectionExpanded(isExpanded: boolean) {
 }
 
 function isIcoCropRequired(path: string) {
-  const dimensions = imageDimensions.get(path);
-  return dimensions !== undefined && dimensions[0] !== dimensions[1] && !icoCropRegions.has(path);
+  return imageDimensions.has(path) && !icoCropRegions.has(path);
 }
 
-async function startIcoCropping() {
+async function startIcoCropping(paths = sourcePaths.filter(isIcoCropRequired)) {
   if (icoCropDialog.open) return true;
-  icoCropQueue = sourcePaths.filter(isIcoCropRequired);
+  icoCropQueue = paths.filter((path) => imageDimensions.has(path));
   icoCropIndex = 0;
   if (!icoCropQueue.length) return false;
   await showNextIcoCrop();
@@ -226,8 +238,6 @@ async function showNextIcoCrop() {
     icoCropDialog.close();
     return;
   }
-  const [width, height] = imageDimensions.get(path)!;
-  byId("ico-crop-file").textContent = `${path.split(/[\\/]/).pop() ?? path} · ${width} × ${height}`;
   byId("ico-crop-progress").textContent = `${icoCropIndex + 1} / ${icoCropQueue.length}`;
   icoCropConfirm.textContent = icoCropIndex === icoCropQueue.length - 1 ? "完成" : "下一张";
   if (!icoCropDialog.open) icoCropDialog.showModal();
@@ -239,48 +249,112 @@ async function showNextIcoCrop() {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const stageBounds = icoCropStage.getBoundingClientRect();
   const imageBounds = icoCropImage.getBoundingClientRect();
-  cropImageBounds = {
+  icoCropImageBounds = {
     x: imageBounds.left - stageBounds.left,
     y: imageBounds.top - stageBounds.top,
     width: imageBounds.width,
     height: imageBounds.height,
   };
-  const size = Math.min(cropImageBounds.width, cropImageBounds.height) * 0.8;
-  cropDisplayRegion = {
-    x: cropImageBounds.x + (cropImageBounds.width - size) / 2,
-    y: cropImageBounds.y + (cropImageBounds.height - size) / 2,
+  const size = Math.min(icoCropImageBounds.width, icoCropImageBounds.height) * 0.8;
+  icoCropDisplayRegion = {
+    x: icoCropImageBounds.x + (icoCropImageBounds.width - size) / 2,
+    y: icoCropImageBounds.y + (icoCropImageBounds.height - size) / 2,
     width: size,
     height: size,
   };
-  renderCropSelection();
+  renderIcoCropSelection();
 }
 
-function renderCropSelection() {
-  icoCropSelection.style.left = `${cropDisplayRegion.x}px`;
-  icoCropSelection.style.top = `${cropDisplayRegion.y}px`;
-  icoCropSelection.style.width = `${cropDisplayRegion.width}px`;
-  icoCropSelection.style.height = `${cropDisplayRegion.height}px`;
+function renderIcoCropSelection() {
+  icoCropSelection.style.left = `${icoCropDisplayRegion.x}px`;
+  icoCropSelection.style.top = `${icoCropDisplayRegion.y}px`;
+  icoCropSelection.style.width = `${icoCropDisplayRegion.width}px`;
+  icoCropSelection.style.height = `${icoCropDisplayRegion.height}px`;
+}
+
+function currentImageCropDimensions() {
+  if (!imageCropPath) return null;
+  const [width, height] = imageDimensions.get(imageCropPath)!;
+  return {
+    width: Math.max(1, Math.round(imageCropDisplayRegion.width * width / imageCropImageBounds.width)),
+    height: Math.max(1, Math.round(imageCropDisplayRegion.height * height / imageCropImageBounds.height)),
+  };
+}
+
+function resetImageCropResolutionInputs() {
+  const dimensions = currentImageCropDimensions();
+  if (!dimensions) return;
+  imageCropWidthInput.value = "";
+  imageCropHeightInput.value = "";
+  imageCropWidthInput.placeholder = String(dimensions.width);
+  imageCropHeightInput.placeholder = String(dimensions.height);
+}
+
+function updateImageCropResolution() {
+  const dimensions = currentImageCropDimensions();
+  if (!dimensions) return;
+  imageCropWidthInput.placeholder = String(dimensions.width);
+  imageCropHeightInput.placeholder = String(dimensions.height);
+  const requestedWidth = Number(imageCropWidthInput.value);
+  if (requestedWidth > 0) imageCropHeightInput.value = String(Math.max(1, Math.round(requestedWidth * dimensions.height / dimensions.width)));
+}
+
+async function startFileCropping(path: string) {
+  if (imageCropDialog.open || !imageDimensions.has(path)) return;
+  imageCropPath = path;
+  imageCropDialog.showModal();
+  imageCropImage.src = convertFileSrc(path);
+  await new Promise<void>((resolve, reject) => {
+    imageCropImage.onload = () => resolve();
+    imageCropImage.onerror = () => reject(new Error("无法加载待裁剪图片"));
+  });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const stageBounds = imageCropStage.getBoundingClientRect();
+  const imageBounds = imageCropImage.getBoundingClientRect();
+  imageCropImageBounds = { x: imageBounds.left - stageBounds.left, y: imageBounds.top - stageBounds.top, width: imageBounds.width, height: imageBounds.height };
+  imageCropDisplayRegion = { ...imageCropImageBounds };
+  resetImageCropResolutionInputs();
+  renderImageCropSelection();
+}
+
+function renderImageCropSelection() {
+  imageCropSelection.style.left = `${imageCropDisplayRegion.x}px`;
+  imageCropSelection.style.top = `${imageCropDisplayRegion.y}px`;
+  imageCropSelection.style.width = `${imageCropDisplayRegion.width}px`;
+  imageCropSelection.style.height = `${imageCropDisplayRegion.height}px`;
 }
 
 function saveCurrentIcoCrop() {
   const path = icoCropQueue[icoCropIndex];
   const [width, height] = imageDimensions.get(path)!;
-  const scaleX = width / cropImageBounds.width;
-  const scaleY = height / cropImageBounds.height;
-  const x = Math.max(0, Math.min(Math.round((cropDisplayRegion.x - cropImageBounds.x) * scaleX), width - 1));
-  const y = Math.max(0, Math.min(Math.round((cropDisplayRegion.y - cropImageBounds.y) * scaleY), height - 1));
-  const size = Math.max(1, Math.min(
-    Math.round(cropDisplayRegion.width * scaleX),
-    Math.round(cropDisplayRegion.height * scaleY),
-    width - x,
-    height - y,
-  ));
+  const scaleX = width / icoCropImageBounds.width;
+  const scaleY = height / icoCropImageBounds.height;
+  const x = Math.max(0, Math.min(Math.round((icoCropDisplayRegion.x - icoCropImageBounds.x) * scaleX), width - 1));
+  const y = Math.max(0, Math.min(Math.round((icoCropDisplayRegion.y - icoCropImageBounds.y) * scaleY), height - 1));
+  const size = Math.max(1, Math.min(Math.round(icoCropDisplayRegion.width * scaleX), Math.round(icoCropDisplayRegion.height * scaleY), width - x, height - y));
   icoCropRegions.set(path, {
     x,
     y,
     width: size,
     height: size,
   });
+}
+
+function saveImageCrop() {
+  const path = imageCropPath;
+  if (!path) return;
+  const [width, height] = imageDimensions.get(path)!;
+  const scaleX = width / imageCropImageBounds.width;
+  const scaleY = height / imageCropImageBounds.height;
+  const x = Math.max(0, Math.min(Math.round((imageCropDisplayRegion.x - imageCropImageBounds.x) * scaleX), width - 1));
+  const y = Math.max(0, Math.min(Math.round((imageCropDisplayRegion.y - imageCropImageBounds.y) * scaleY), height - 1));
+  const cropWidth = Math.max(1, Math.min(Math.round(imageCropDisplayRegion.width * scaleX), width - x));
+  const cropHeight = Math.max(1, Math.min(Math.round(imageCropDisplayRegion.height * scaleY), height - y));
+  icoCropRegions.set(path, { x, y, width: cropWidth, height: cropHeight });
+  const requestedWidth = Number(imageCropWidthInput.value);
+  const requestedHeight = Number(imageCropHeightInput.value);
+  if (requestedWidth > 0 && requestedHeight > 0) outputDimensions.set(path, { width: requestedWidth, height: requestedHeight });
+  else outputDimensions.delete(path);
 }
 
 function cancelIcoCropping() {
@@ -315,12 +389,20 @@ formatSectionToggle.addEventListener("click", () => {
 });
 fileList.addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest(".empty-state, .add-file-button")) void addFiles();
+  const cropButton = (event.target as HTMLElement).closest<HTMLButtonElement>(".crop-file-button");
+  if (cropButton) {
+    const path = sourcePaths[Number(cropButton.dataset.fileIndex)];
+    if (targetFormat === "ico") void startIcoCropping([path]);
+    else void startFileCropping(path);
+    return;
+  }
   const removeButton = (event.target as HTMLElement).closest<HTMLButtonElement>(".remove-file-button");
   if (!removeButton) return;
   const [removedPath] = sourcePaths.splice(Number(removeButton.dataset.fileIndex), 1);
   fileSizes.delete(removedPath);
   imageDimensions.delete(removedPath);
   icoCropRegions.delete(removedPath);
+  outputDimensions.delete(removedPath);
   renderFiles();
 });
 fileList.addEventListener("error", (event) => {
@@ -345,6 +427,7 @@ byId("clear-button").addEventListener("click", () => {
   fileSizes.clear();
   imageDimensions.clear();
   icoCropRegions.clear();
+  outputDimensions.clear();
   renderFiles();
 });
 icoCropConfirm.addEventListener("click", () => {
@@ -352,7 +435,6 @@ icoCropConfirm.addEventListener("click", () => {
   icoCropIndex += 1;
   void showNextIcoCrop();
 });
-byId("ico-crop-cancel").addEventListener("click", cancelIcoCropping);
 icoSizeOptions.forEach((option) => {
   option.addEventListener("change", () => {
     if (option.checked) icoSize = Number(option.value);
@@ -363,34 +445,62 @@ icoCropDialog.addEventListener("cancel", (event) => {
   cancelIcoCropping();
 });
 icoCropStage.addEventListener("pointerdown", (event) => {
-  if (!icoCropDialog.open) return;
   const target = event.target as HTMLElement;
-  const handle = target.closest(".crop-handle");
-  if (target !== icoCropSelection && !handle) return;
-  const mode = handle ? "resize" : "move";
-  cropPointer = { mode, startX: event.clientX, startY: event.clientY, region: { ...cropDisplayRegion } };
+  if (target !== icoCropSelection && !target.closest(".crop-handle")) return;
+  icoCropPointer = { startX: event.clientX, startY: event.clientY, region: { ...icoCropDisplayRegion } };
   icoCropStage.setPointerCapture(event.pointerId);
 });
 icoCropStage.addEventListener("pointermove", (event) => {
-  if (!cropPointer) return;
-  const deltaX = event.clientX - cropPointer.startX;
-  const deltaY = event.clientY - cropPointer.startY;
-  if (cropPointer.mode === "move") {
-    cropDisplayRegion.x = Math.min(Math.max(cropPointer.region.x + deltaX, cropImageBounds.x), cropImageBounds.x + cropImageBounds.width - cropPointer.region.width);
-    cropDisplayRegion.y = Math.min(Math.max(cropPointer.region.y + deltaY, cropImageBounds.y), cropImageBounds.y + cropImageBounds.height - cropPointer.region.height);
-  } else {
-    const requestedSize = cropPointer.region.width + Math.max(deltaX, deltaY);
-    const availableSize = Math.min(
-      cropImageBounds.x + cropImageBounds.width - cropPointer.region.x,
-      cropImageBounds.y + cropImageBounds.height - cropPointer.region.y,
-    );
-    const size = Math.max(24, Math.min(requestedSize, availableSize));
-    cropDisplayRegion.width = size;
-    cropDisplayRegion.height = size;
-  }
-  renderCropSelection();
+  if (!icoCropPointer) return;
+  const delta = Math.max(event.clientX - icoCropPointer.startX, event.clientY - icoCropPointer.startY);
+  const maximumSize = Math.min(icoCropImageBounds.x + icoCropImageBounds.width - icoCropPointer.region.x, icoCropImageBounds.y + icoCropImageBounds.height - icoCropPointer.region.y);
+  const size = Math.max(24, Math.min(icoCropPointer.region.width + delta, maximumSize));
+  icoCropDisplayRegion.width = size;
+  icoCropDisplayRegion.height = size;
+  renderIcoCropSelection();
 });
-icoCropStage.addEventListener("pointerup", () => { cropPointer = null; });
+icoCropStage.addEventListener("pointerup", () => { icoCropPointer = null; });
+imageCropConfirm.addEventListener("click", () => {
+  saveImageCrop();
+  imageCropPath = null;
+  imageCropDialog.close();
+  renderFiles();
+});
+imageCropDialog.addEventListener("cancel", () => { imageCropPath = null; });
+imageCropStage.addEventListener("pointerdown", (event) => {
+  const target = event.target as HTMLElement;
+  const handle = target.closest(".crop-handle");
+  if (target !== imageCropSelection && !handle) return;
+  const cropHandle = handle?.classList.contains("crop-handle-x") ? "x" : handle?.classList.contains("crop-handle-y") ? "y" : handle ? "corner" : null;
+  imageCropPointer = { mode: handle ? "resize" : "move", handle: cropHandle, startX: event.clientX, startY: event.clientY, region: { ...imageCropDisplayRegion } };
+  imageCropStage.setPointerCapture(event.pointerId);
+});
+imageCropStage.addEventListener("pointermove", (event) => {
+  if (!imageCropPointer) return;
+  const deltaX = event.clientX - imageCropPointer.startX;
+  const deltaY = event.clientY - imageCropPointer.startY;
+  if (imageCropPointer.mode === "move") {
+    imageCropDisplayRegion.x = Math.min(Math.max(imageCropPointer.region.x + deltaX, imageCropImageBounds.x), imageCropImageBounds.x + imageCropImageBounds.width - imageCropPointer.region.width);
+    imageCropDisplayRegion.y = Math.min(Math.max(imageCropPointer.region.y + deltaY, imageCropImageBounds.y), imageCropImageBounds.y + imageCropImageBounds.height - imageCropPointer.region.height);
+  } else {
+    const maximumWidth = imageCropImageBounds.x + imageCropImageBounds.width - imageCropPointer.region.x;
+    const maximumHeight = imageCropImageBounds.y + imageCropImageBounds.height - imageCropPointer.region.y;
+    if (imageCropPointer.handle === "corner") {
+      imageCropDisplayRegion.width = Math.max(24, Math.min(imageCropPointer.region.width + deltaX, maximumWidth));
+      imageCropDisplayRegion.height = Math.max(24, Math.min(imageCropPointer.region.height + deltaY, maximumHeight));
+    } else if (imageCropPointer.handle === "x") imageCropDisplayRegion.width = Math.max(24, Math.min(imageCropPointer.region.width + deltaX, maximumWidth));
+    else imageCropDisplayRegion.height = Math.max(24, Math.min(imageCropPointer.region.height + deltaY, maximumHeight));
+  }
+  updateImageCropResolution();
+  renderImageCropSelection();
+});
+imageCropStage.addEventListener("pointerup", () => { imageCropPointer = null; });
+imageCropWidthInput.addEventListener("input", updateImageCropResolution);
+imageCropHeightInput.addEventListener("input", () => {
+  const dimensions = currentImageCropDimensions();
+  const requestedHeight = Number(imageCropHeightInput.value);
+  if (dimensions && requestedHeight > 0) imageCropWidthInput.value = String(Math.max(1, Math.round(requestedHeight * dimensions.width / dimensions.height)));
+});
 void getCurrentWebviewWindow().onDragDropEvent((event) => {
   if (event.payload.type === "drop") void addSourcePaths(event.payload.paths);
 });

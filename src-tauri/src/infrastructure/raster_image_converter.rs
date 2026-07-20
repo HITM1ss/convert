@@ -4,21 +4,23 @@ use std::path::Path;
 
 use image::{imageops::FilterType, DynamicImage, ExtendedColorType, ImageEncoder, ImageFormat};
 
-use crate::domain::conversion::{CompressionMode, CropRegion, SupportedFormat};
+use crate::domain::conversion::{CompressionMode, CropRegion, OutputDimensions, SupportedFormat};
 
 pub struct RasterImageConverter;
 
 impl RasterImageConverter {
-    pub fn convert(source: &Path, output: &Path, format: SupportedFormat, quality: u8, compression_mode: CompressionMode, crop_region: Option<&CropRegion>, ico_size: u32) -> Result<(), String> {
+    pub fn convert(source: &Path, output: &Path, format: SupportedFormat, quality: u8, compression_mode: CompressionMode, crop_region: Option<&CropRegion>, output_dimensions: Option<&OutputDimensions>, ico_size: u32) -> Result<(), String> {
         let image = read_image(source)?;
+        let image = match crop_region {
+            Some(region) => crop_to_region(image, region)?,
+            None => image,
+        };
+        let image = match output_dimensions {
+            Some(dimensions) => resize_to_dimensions(image, dimensions)?,
+            None => image,
+        };
         let image = match format {
-            SupportedFormat::Ico => {
-                let cropped = match crop_region {
-                    Some(region) => crop_to_region(image, region)?,
-                    None => image,
-                };
-                resize_ico(cropped, ico_size)?
-            }
+            SupportedFormat::Ico => resize_ico(image, ico_size)?,
             _ => image,
         };
         let temporary = output.with_extension(format!("{}.tmp", format.extension()));
@@ -95,10 +97,18 @@ fn crop_to_region(image: DynamicImage, region: &CropRegion) -> Result<DynamicIma
         || region.x.checked_add(region.width).is_none_or(|right| right > image.width())
         || region.y.checked_add(region.height).is_none_or(|bottom| bottom > image.height())
     {
-        return Err("ICO 裁剪区域无效。".to_owned());
+        return Err("裁剪区域无效。".to_owned());
     }
 
     Ok(image.crop_imm(region.x, region.y, region.width, region.height))
+}
+
+fn resize_to_dimensions(image: DynamicImage, dimensions: &OutputDimensions) -> Result<DynamicImage, String> {
+    if dimensions.width == 0 || dimensions.height == 0 {
+        return Err("输出分辨率无效。".to_owned());
+    }
+
+    Ok(image.resize_exact(dimensions.width, dimensions.height, FilterType::Lanczos3))
 }
 
 fn resize_ico(image: DynamicImage, size: u32) -> Result<DynamicImage, String> {

@@ -52,6 +52,8 @@ pub struct ConversionRequest {
     pub compression_mode: CompressionMode,
     #[serde(default)]
     pub crop_regions: HashMap<String, CropRegion>,
+    #[serde(default)]
+    pub output_dimensions: HashMap<String, OutputDimensions>,
     #[serde(default = "default_ico_size")]
     pub ico_size: u32,
 }
@@ -61,6 +63,13 @@ pub struct ConversionRequest {
 pub struct CropRegion {
     pub x: u32,
     pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputDimensions {
     pub width: u32,
     pub height: u32,
 }

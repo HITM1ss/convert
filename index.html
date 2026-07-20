@@ -42,18 +42,11 @@
       </aside>
       <button class="message-bar" id="status-message" type="button" title="打开日志文件夹" aria-label="打开日志文件夹" aria-live="polite">准备就绪</button>
     </main>
-    <dialog class="crop-dialog" id="ico-crop-dialog" aria-labelledby="ico-crop-title">
+    <dialog class="crop-dialog" id="ico-crop-dialog" aria-label="裁剪图片">
       <form method="dialog" class="crop-dialog-content">
-        <header class="crop-dialog-header">
-          <div>
-            <h2 id="ico-crop-title">裁剪为 ICO 图标</h2>
-            <p id="ico-crop-file"></p>
-          </div>
-          <button class="crop-close-button" id="ico-crop-cancel" type="button" title="取消 ICO 转换" aria-label="取消 ICO 转换">&#215;</button>
-        </header>
         <div class="crop-stage" id="ico-crop-stage">
           <img id="ico-crop-image" alt="待裁剪图片" />
-          <div class="crop-selection" id="ico-crop-selection" aria-label="裁剪区域"><span class="crop-handle crop-handle-x" aria-hidden="true"></span><span class="crop-handle crop-handle-y" aria-hidden="true"></span><span class="crop-handle crop-handle-corner" aria-hidden="true"></span></div>
+          <div class="crop-selection" id="ico-crop-selection" aria-label="裁剪区域"><span class="crop-handle crop-handle-corner" aria-hidden="true"></span></div>
         </div>
         <fieldset class="ico-size-options" aria-label="ICO 输出分辨率">
           <legend>输出分辨率</legend>
@@ -65,6 +58,23 @@
         <footer class="crop-dialog-actions">
           <span id="ico-crop-progress"></span>
           <button class="crop-confirm-button" id="ico-crop-confirm" type="button">下一张</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog class="crop-dialog" id="image-crop-dialog" aria-label="裁剪图片">
+      <form method="dialog" class="crop-dialog-content">
+        <div class="crop-stage" id="image-crop-stage">
+          <img id="image-crop-image" alt="待裁剪图片" />
+          <div class="crop-selection" id="image-crop-selection" aria-label="裁剪区域"><span class="crop-handle crop-handle-x" aria-hidden="true"></span><span class="crop-handle crop-handle-y" aria-hidden="true"></span><span class="crop-handle crop-handle-corner" aria-hidden="true"></span></div>
+        </div>
+        <div class="crop-resolution" aria-label="输出分辨率">
+          <label>输出分辨率<input id="image-crop-width-input" type="number" min="1" inputmode="numeric" aria-label="输出宽度" /></label>
+          <span aria-hidden="true">×</span>
+          <label><span class="visually-hidden">输出高度</span><input id="image-crop-height-input" type="number" min="1" inputmode="numeric" aria-label="输出高度" /></label>
+        </div>
+        <footer class="crop-dialog-actions">
+          <span></span>
+          <button class="crop-confirm-button" id="image-crop-confirm" type="button">应用裁剪</button>
         </footer>
       </form>
     </dialog>
