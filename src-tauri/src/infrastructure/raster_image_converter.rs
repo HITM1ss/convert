@@ -36,6 +36,7 @@ impl RasterImageConverter {
         match format {
             SupportedFormat::Jpeg => image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, quality)
                 .encode_image(image),
+            SupportedFormat::Gif => image.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Gif),
             SupportedFormat::Webp => match compression_mode {
                 CompressionMode::Lossy => encode_lossy_webp(image, &mut encoded, quality),
                 CompressionMode::Lossless => image::codecs::webp::WebPEncoder::new_lossless(&mut encoded)
@@ -131,6 +132,7 @@ fn resize_ico(image: DynamicImage, size: u32) -> Result<DynamicImage, String> {
 fn image_format(format: SupportedFormat) -> ImageFormat {
     match format {
         SupportedFormat::Jpeg => ImageFormat::Jpeg,
+        SupportedFormat::Gif => ImageFormat::Gif,
         SupportedFormat::Png => ImageFormat::Png,
         SupportedFormat::Webp => ImageFormat::WebP,
         SupportedFormat::Bmp => ImageFormat::Bmp,
@@ -138,5 +140,38 @@ fn image_format(format: SupportedFormat) -> ImageFormat {
         SupportedFormat::Ico => ImageFormat::Ico,
         SupportedFormat::Avif => ImageFormat::Avif,
         SupportedFormat::Heic => unreachable!("HEIC uses the dedicated heif encoder"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RasterImageConverter;
+    use crate::domain::conversion::{CompressionMode, SupportedFormat};
+    use image::{Rgb, RgbImage};
+
+    #[test]
+    fn converts_static_image_to_gif() {
+        let directory = std::env::temp_dir().join(format!("format-forge-gif-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("create temporary directory");
+        let source = directory.join("source.png");
+        let output = directory.join("output.gif");
+        RgbImage::from_pixel(2, 2, Rgb([29, 155, 240]))
+            .save(&source)
+            .expect("write source PNG");
+
+        RasterImageConverter::convert(
+            &source,
+            &output,
+            SupportedFormat::Gif,
+            88,
+            CompressionMode::Lossy,
+            None,
+            None,
+            256,
+        )
+        .expect("convert PNG to GIF");
+
+        assert!(output.is_file());
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum SupportedFormat {
     Jpeg,
+    Gif,
     Png,
     Webp,
     Bmp,
@@ -24,12 +25,13 @@ pub enum CompressionMode {
 
 impl SupportedFormat {
     pub fn all() -> Vec<Self> {
-        vec![Self::Jpeg, Self::Png, Self::Webp, Self::Bmp, Self::Tiff, Self::Ico, Self::Avif, Self::Heic]
+        vec![Self::Jpeg, Self::Gif, Self::Png, Self::Webp, Self::Bmp, Self::Tiff, Self::Ico, Self::Avif, Self::Heic]
     }
 
     pub fn extension(self) -> &'static str {
         match self {
             Self::Jpeg => "jpg",
+            Self::Gif => "gif",
             Self::Png => "png",
             Self::Webp => "webp",
             Self::Bmp => "bmp",

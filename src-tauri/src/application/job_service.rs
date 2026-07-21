@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::domain::conversion::{ConversionRequest, ConversionResult, ConversionStatus};
-use crate::infrastructure::raster_image_converter::RasterImageConverter;
+use crate::domain::conversion::{ConversionRequest, ConversionResult, ConversionStatus, SupportedFormat};
+use crate::infrastructure::{raster_image_converter::RasterImageConverter, video_gif_converter::VideoGifConverter};
 
-pub fn convert_batch<F>(request: ConversionRequest, mut on_result: F) -> Vec<ConversionResult>
+pub fn convert_batch<F>(
+    request: ConversionRequest,
+    app_handle: &tauri::AppHandle,
+    mut on_result: F,
+) -> Vec<ConversionResult>
 where
     F: FnMut(&ConversionResult),
 {
@@ -32,7 +36,13 @@ where
             let output = unique_output_path(output_directory, source, request.target_format.extension());
             let crop_region = request.crop_regions.get(&source_path);
             let output_dimensions = request.output_dimensions.get(&source_path);
-            let result = match RasterImageConverter::convert(source, &output, request.target_format, request.quality, request.compression_mode, crop_region, output_dimensions, request.ico_size) {
+            let conversion = match request.target_format {
+                SupportedFormat::Gif if is_video(source) => {
+                    VideoGifConverter::convert(source, &output, app_handle)
+                }
+                format => RasterImageConverter::convert(source, &output, format, request.quality, request.compression_mode, crop_region, output_dimensions, request.ico_size),
+            };
+            let result = match conversion {
                 Ok(()) => ConversionResult {
                     source_path,
                     output_path: Some(output.to_string_lossy().into_owned()),
@@ -54,6 +64,13 @@ where
         .collect()
 }
 
+fn is_video(source: &Path) -> bool {
+    matches!(
+        source.extension().and_then(|extension| extension.to_str()),
+        Some(extension) if matches!(extension.to_ascii_lowercase().as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "webm")
+    )
+}
+
 fn unique_output_path(output_directory: &Path, source: &Path, extension: &str) -> PathBuf {
     let stem = source.file_stem().and_then(|name| name.to_str()).unwrap_or("converted");
     let mut candidate = output_directory.join(format!("{stem}.{extension}"));
@@ -67,7 +84,7 @@ fn unique_output_path(output_directory: &Path, source: &Path, extension: &str) -
 
 #[cfg(test)]
 mod tests {
-    use super::unique_output_path;
+    use super::{is_video, unique_output_path};
     use std::path::Path;
 
     #[test]
@@ -76,5 +93,11 @@ mod tests {
             unique_output_path(Path::new("/tmp"), Path::new("source/photo.png"), "jpg"),
             Path::new("/tmp/photo.jpg")
         );
+    }
+
+    #[test]
+    fn recognizes_supported_video_extensions() {
+        assert!(is_video(Path::new("clip.MOV")));
+        assert!(!is_video(Path::new("photo.png")));
     }
 }

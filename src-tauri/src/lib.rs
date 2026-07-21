@@ -18,6 +18,14 @@ fn log_directory_path(app_handle: &tauri::AppHandle) -> Result<std::path::PathBu
     Ok(directory)
 }
 
+fn video_thumbnail_directory(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app_handle
+        .path()
+        .app_cache_dir()
+        .map(|directory| directory.join("video-thumbnails"))
+        .map_err(|error| format!("无法获取视频缩略图缓存：{error}"))
+}
+
 #[tauri::command]
 fn supported_formats() -> Vec<SupportedFormat> {
     SupportedFormat::all()
@@ -35,7 +43,7 @@ async fn convert_images(
         if let Some(log) = &mut log {
             let _ = writeln!(log, "开始转换：{} 个文件，目标格式 {:?}", request.source_paths.len(), request.target_format);
         }
-        convert_batch(request, |result| {
+        convert_batch(request, &app_handle, |result| {
             if let Some(log) = &mut log {
                 let _ = writeln!(log, "结果：{:?}", result);
             }
@@ -75,12 +83,33 @@ fn file_sizes(paths: Vec<String>) -> Vec<Option<u64>> {
         .collect()
     }
 
+#[tauri::command]
+fn video_thumbnails(app_handle: tauri::AppHandle, paths: Vec<String>) -> Vec<Option<String>> {
+    let cache_directory = match video_thumbnail_directory(&app_handle) {
+        Ok(directory) => directory,
+        Err(_) => return paths.into_iter().map(|_| None).collect(),
+    };
+    paths
+        .into_iter()
+        .map(|path| {
+            infrastructure::video_gif_converter::VideoGifConverter::create_thumbnail(
+                std::path::Path::new(&path),
+                &cache_directory,
+                &app_handle,
+            )
+            .ok()
+            .map(|thumbnail| thumbnail.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![supported_formats, convert_images, file_sizes, image_dimensions, log_directory])
+        .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![supported_formats, convert_images, file_sizes, image_dimensions, video_thumbnails, log_directory])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -28,6 +28,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - run: npm ci
+      - run: npm run prepare:ffmpeg -- ${{ matrix.target }}
       - run: npm run check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
       - run: npm run tauri build -- --target ${{ matrix.target }}

@@ -4,14 +4,14 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-type Format = "jpeg" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic";
+type Format = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic";
 type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed"; message?: string };
 type Dimensions = [number, number];
 type CropRegion = { x: number; y: number; width: number; height: number };
 type OutputDimensions = { width: number; height: number };
 type CompressionMode = "lossy" | "lossless";
 
-const formats: Record<Format, string> = { jpeg: "JPG", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC" };
+const formats: Record<Format, string> = { jpeg: "JPG", gif: "GIF", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC" };
 let sourcePaths: string[] = [];
 let outputDirectory = "";
 
@@ -43,6 +43,7 @@ let selectedCompressionMode: CompressionMode = "lossy";
 let isFormatSectionExpanded = true;
 const fileSizes = new Map<string, number>();
 const imageDimensions = new Map<string, Dimensions>();
+const videoThumbnails = new Map<string, string>();
 const icoCropRegions = new Map<string, CropRegion>();
 const outputDimensions = new Map<string, OutputDimensions>();
 const taskResults = new Map<string, Result>();
@@ -66,6 +67,34 @@ function formatFileSize(bytes?: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isVideoPath(path: string) {
+  return /\.(mp4|mov|m4v|avi|mkv|webm)$/i.test(path);
+}
+
+function importExtensions() {
+  return ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif", "mp4", "mov", "m4v", "avi", "mkv", "webm"];
+}
+
+function isSupportedImport(path: string) {
+  const extension = path.split(".").pop()?.toLowerCase();
+  return extension !== undefined && importExtensions().includes(extension);
+}
+
+function videoThumbnail(path: string) {
+  const preview = videoThumbnails.get(path);
+  const image = preview ? `<img src="${convertFileSrc(preview)}" alt="" />` : '<span class="video-marker" aria-hidden="true">视频</span>';
+  return `${image}<span class="video-play-indicator" aria-hidden="true"></span>`;
+}
+
+async function createVideoThumbnails(paths: string[]) {
+  const videos = paths.filter(isVideoPath);
+  if (!videos.length) return;
+  const thumbnails = await invoke<Array<string | null>>("video_thumbnails", { paths: videos });
+  thumbnails.forEach((thumbnail, index) => {
+    if (thumbnail) videoThumbnails.set(videos[index], thumbnail);
+  });
 }
 
 function stopStatusScroll() {
@@ -123,7 +152,10 @@ function renderTaskQueue() {
       const details = result?.status === "completed"
         ? `${formats[targetFormat]} · ${formatFileSize(fileSizes.get(path))} &#8594; ${formatFileSize(result.outputSize)}`
         : formats[targetFormat];
-      return `<div class="task-queue-row"><span class="queue-thumbnail"><img src="${convertFileSrc(path)}" alt="" /></span><span class="queue-file"><span>${name}</span><small>${details}</small></span><span class="queue-state ${result?.status ?? (state === "转换中" ? "converting" : "pending")}">${state}</span></div>`;
+      const thumbnail = isVideoPath(path)
+        ? videoThumbnail(path)
+        : `<img src="${convertFileSrc(path)}" alt="" />`;
+      return `<div class="task-queue-row"><span class="queue-thumbnail ${isVideoPath(path) ? "is-video" : ""}">${thumbnail}</span><span class="queue-file"><span>${name}</span><small>${details}</small></span><span class="queue-state ${result?.status ?? (state === "转换中" ? "converting" : "pending")}">${state}</span></div>`;
     }).join("")
     : '<p class="task-queue-empty">暂无任务</p>';
 }
@@ -135,7 +167,13 @@ function renderFiles(results: Result[] = []) {
     const result = resultByPath.get(path);
     const name = path.split(/[\\/]/).pop() ?? path;
     const state = result ? (result.status === "completed" ? "完成" : result.message ?? "失败") : "待处理";
-    return `<div class="file-row"><span class="file-thumbnail"><img src="${convertFileSrc(path)}" alt="" /></span><span class="file-name">${name}</span><span class="file-state ${result?.status ?? "pending"}">${state}</span><span class="file-size">${formatFileSize(fileSizes.get(path))}</span><button class="crop-file-button" type="button" data-file-index="${index}" title="裁剪图片" aria-label="裁剪 ${name}">裁剪</button><button class="remove-file-button" type="button" data-file-index="${index}" title="移除文件" aria-label="移除 ${name}">&times;</button></div>`;
+      const thumbnail = isVideoPath(path)
+        ? videoThumbnail(path)
+      : `<img src="${convertFileSrc(path)}" alt="" />`;
+    const cropButton = !isVideoPath(path)
+      ? `<button class="crop-file-button" type="button" data-file-index="${index}" title="裁剪图片" aria-label="裁剪 ${name}">裁剪</button>`
+      : "";
+    return `<div class="file-row"><span class="file-thumbnail ${isVideoPath(path) ? "is-video" : ""}">${thumbnail}</span><span class="file-name">${name}</span><span class="file-state ${result?.status ?? "pending"}">${state}</span><span class="file-size">${formatFileSize(fileSizes.get(path))}</span>${cropButton}<button class="remove-file-button" type="button" data-file-index="${index}" title="移除文件" aria-label="移除 ${name}">&times;</button></div>`;
   }).join("");
   fileList.innerHTML = fileRows
     ? `${fileRows}<button class="add-file-button" type="button"><span aria-hidden="true">+</span>添加文件</button>`
@@ -147,8 +185,9 @@ function renderFiles(results: Result[] = []) {
 }
 
 async function addSourcePaths(paths: string[]) {
-  const addedPaths = paths.filter((path) => !sourcePaths.includes(path));
-  sourcePaths = [...new Set([...sourcePaths, ...paths])];
+  const supportedPaths = paths.filter(isSupportedImport);
+  const addedPaths = supportedPaths.filter((path) => !sourcePaths.includes(path));
+  sourcePaths = [...new Set([...sourcePaths, ...supportedPaths])];
   renderFiles();
   if (!addedPaths.length) return;
   const sizes = await invoke<Array<number | null>>("file_sizes", { paths: addedPaths });
@@ -160,11 +199,13 @@ async function addSourcePaths(paths: string[]) {
     if (imageSize !== null) imageDimensions.set(path, imageSize);
   });
   renderFiles();
+  await createVideoThumbnails(addedPaths);
+  renderFiles();
   if (targetFormat === "ico") void startIcoCropping();
 }
 
 async function addFiles() {
-  const selected = await open({ multiple: true, directory: false, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif"] }] });
+  const selected = await open({ multiple: true, directory: false, filters: [{ name: "图片和视频", extensions: importExtensions() }] });
   if (!selected) return;
   await addSourcePaths(Array.isArray(selected) ? selected : [selected]);
 }
@@ -209,7 +250,7 @@ function renderCompressionMode() {
   const isSupported = targetFormat === "webp";
   compressionMode.classList.toggle("is-disabled", !isSupported);
   compressionMode.classList.toggle("is-lossless", selectedCompressionMode === "lossless");
-  qualityInput.disabled = isSupported && selectedCompressionMode === "lossless";
+  qualityInput.disabled = targetFormat === "gif" || (isSupported && selectedCompressionMode === "lossless");
   compressionMode.querySelectorAll<HTMLButtonElement>("[data-compression-mode]").forEach((button) => {
     button.disabled = !isSupported;
     button.classList.toggle("is-active", button.dataset.compressionMode === selectedCompressionMode);
@@ -488,6 +529,7 @@ fileList.addEventListener("click", (event) => {
   const [removedPath] = sourcePaths.splice(Number(removeButton.dataset.fileIndex), 1);
   fileSizes.delete(removedPath);
   imageDimensions.delete(removedPath);
+  videoThumbnails.delete(removedPath);
   icoCropRegions.delete(removedPath);
   outputDimensions.delete(removedPath);
   renderFiles();
