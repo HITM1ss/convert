@@ -1,6 +1,6 @@
 [package]
 name = "format-forge"
-version = "0.1.2"
+version = "0.1.4"
 description = "A private, offline image conversion desktop application"
 authors = ["you"]
 edition = "2021"
