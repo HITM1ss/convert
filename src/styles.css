@@ -24,6 +24,12 @@ button, input { font: inherit; } button { cursor: pointer; }
 .crop-handle-x { top: 50%; right: -7px; bottom: auto; transform: translateY(-50%); cursor: ew-resize; }
 .crop-handle-y { right: auto; bottom: -7px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
 .crop-handle-corner { right: -7px; bottom: -7px; }
+#ico-crop-stage, #image-crop-stage { background: transparent; }
+#ico-crop-stage img { position: relative; z-index: 0; max-width: none; max-height: none; }
+#ico-crop-stage .crop-selection { z-index: 1; box-shadow: none; }
+#image-crop-stage { width: min(560px, calc(100vw - 72px)); height: min(420px, calc(100dvh - 210px)); }
+#image-crop-stage img { position: relative; z-index: 0; max-width: none; max-height: none; }
+#image-crop-stage .crop-selection { z-index: 1; }
 .ico-size-options { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 16px 20px 0; padding: 10px 0 0; border: 0; border-top: 1px solid #2f3336; color: #aab8c2; }.ico-size-options legend { float: left; width: 100%; margin-bottom: 9px; color: #71767b; font-size: 12px; text-align: center; }.ico-size-options label { display: inline-flex; align-items: center; gap: 5px; color: #e7e9ea; font-size: 12px; white-space: nowrap; }.ico-size-options input { width: 14px; height: 14px; margin: 0; accent-color: #1d9bf0; }
 
 .message-bar { height: 38px; min-height: 38px; padding: 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -37,4 +43,4 @@ button, input { font: inherit; } button { cursor: pointer; }
 .workspace { border-right: 0; }
 .message-bar { grid-column: 1 / -1; width: auto; height: 38px; min-height: 38px; margin: 0 0 12px; border: 1px solid #536471; border-radius: 8px; }
 .conversion-bar { min-height: 46px; margin: 0 0 12px; padding-top: 5px; padding-bottom: 5px; border: 1px solid #2f3336; border-radius: 8px; background: #0b0d0f; }
-.crop-resolution { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 20px 0; color: #71767b; font-size: 12px; }.crop-resolution label { display: inline-flex; align-items: center; gap: 8px; }.crop-resolution input { width: 82px; height: 30px; padding: 0 8px; border: 1px solid #536471; border-radius: 4px; color: #e7e9ea; background: #0b0d0f; font-size: 12px; }.crop-resolution input::placeholder { color: #71767b; opacity: 1; }.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.image-crop-actions { gap: 14px; padding: 14px 20px; }.image-crop-actions > span { flex: 1; min-width: 0; white-space: nowrap; }.crop-resolution { display: flex; align-items: center; justify-content: center; gap: 8px; color: #71767b; font-size: 12px; }.crop-resolution label { display: inline-flex; align-items: center; gap: 8px; }.crop-resolution input[type="number"] { width: 72px; height: 30px; padding: 0 8px; border: 1px solid #536471; border-radius: 4px; color: #e7e9ea; background: #0b0d0f; font-size: 12px; }.crop-resolution input[type="number"]::placeholder { color: #71767b; opacity: 1; }.crop-resolution .crop-aspect-lock { margin-left: 2px; color: #e7e9ea; }.crop-resolution .crop-aspect-lock input { width: 14px; height: 14px; margin: 0; accent-color: #1d9bf0; }.image-crop-actions .crop-confirm-button { min-width: 58px; }.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }

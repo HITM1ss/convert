@@ -64,14 +64,15 @@
           <img id="image-crop-image" alt="待裁剪图片" />
           <div class="crop-selection" id="image-crop-selection" aria-label="裁剪区域"><span class="crop-handle crop-handle-x" aria-hidden="true"></span><span class="crop-handle crop-handle-y" aria-hidden="true"></span><span class="crop-handle crop-handle-corner" aria-hidden="true"></span></div>
         </div>
-        <div class="crop-resolution" aria-label="输出分辨率">
-          <label>输出分辨率<input id="image-crop-width-input" type="number" min="1" inputmode="numeric" aria-label="输出宽度" /></label>
-          <span aria-hidden="true">×</span>
-          <label><span class="visually-hidden">输出高度</span><input id="image-crop-height-input" type="number" min="1" inputmode="numeric" aria-label="输出高度" /></label>
-        </div>
-        <footer class="crop-dialog-actions">
-          <span></span>
-          <button class="crop-confirm-button" id="image-crop-confirm" type="button">应用裁剪</button>
+        <footer class="crop-dialog-actions image-crop-actions">
+          <span id="image-crop-source-dimensions"></span>
+          <div class="crop-resolution" aria-label="输出分辨率">
+            <label>输出分辨率<input id="image-crop-width-input" type="number" min="1" inputmode="numeric" aria-label="输出宽度" /></label>
+            <span aria-hidden="true">×</span>
+            <label><span class="visually-hidden">输出高度</span><input id="image-crop-height-input" type="number" min="1" inputmode="numeric" aria-label="输出高度" /></label>
+            <label class="crop-aspect-lock"><input id="image-crop-aspect-lock" type="checkbox" />锁定</label>
+          </div>
+          <button class="crop-confirm-button" id="image-crop-confirm" type="button">裁剪</button>
         </footer>
       </form>
     </dialog>

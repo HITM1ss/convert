@@ -35,6 +35,8 @@ const imageCropSelection = byId<HTMLDivElement>("image-crop-selection");
 const imageCropConfirm = byId<HTMLButtonElement>("image-crop-confirm");
 const imageCropWidthInput = byId<HTMLInputElement>("image-crop-width-input");
 const imageCropHeightInput = byId<HTMLInputElement>("image-crop-height-input");
+const imageCropAspectLock = byId<HTMLInputElement>("image-crop-aspect-lock");
+const imageCropSourceDimensions = byId<HTMLSpanElement>("image-crop-source-dimensions");
 const icoSizeOptions = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="ico-size"]'));
 let targetFormat: Format = "jpeg";
 let selectedCompressionMode: CompressionMode = "lossy";
@@ -52,11 +54,12 @@ let formatBeforeIco: Format = "jpeg";
 let icoSize = 256;
 let icoCropDisplayRegion = { x: 0, y: 0, width: 0, height: 0 };
 let icoCropImageBounds = { x: 0, y: 0, width: 0, height: 0 };
-let icoCropPointer: { startX: number; startY: number; region: typeof icoCropDisplayRegion } | null = null;
+let icoCropPointer: { mode: "move" | "resize"; startX: number; startY: number; region: typeof icoCropDisplayRegion } | null = null;
 let imageCropPath: string | null = null;
 let imageCropDisplayRegion = { x: 0, y: 0, width: 0, height: 0 };
 let imageCropImageBounds = { x: 0, y: 0, width: 0, height: 0 };
 let imageCropPointer: { mode: "move" | "resize"; handle: "x" | "y" | "corner" | null; startX: number; startY: number; region: typeof imageCropDisplayRegion } | null = null;
+let imageCropLockedAspectRatio: number | null = null;
 
 function formatFileSize(bytes?: number) {
   if (bytes === undefined) return "--";
@@ -247,6 +250,12 @@ async function showNextIcoCrop() {
     icoCropImage.onerror = () => reject(new Error("无法加载待裁剪图片"));
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const previewScale = Math.min(
+      icoCropStage.clientWidth / icoCropImage.naturalWidth,
+      icoCropStage.clientHeight / icoCropImage.naturalHeight,
+    );
+    icoCropImage.style.width = `${Math.max(1, Math.floor(icoCropImage.naturalWidth * previewScale))}px`;
+    icoCropImage.style.height = `${Math.max(1, Math.floor(icoCropImage.naturalHeight * previewScale))}px`;
   const stageBounds = icoCropStage.getBoundingClientRect();
   const imageBounds = icoCropImage.getBoundingClientRect();
   icoCropImageBounds = {
@@ -290,18 +299,90 @@ function resetImageCropResolutionInputs() {
   imageCropHeightInput.placeholder = String(dimensions.height);
 }
 
-function updateImageCropResolution() {
+function updateImageCropResolutionPlaceholders() {
   const dimensions = currentImageCropDimensions();
   if (!dimensions) return;
   imageCropWidthInput.placeholder = String(dimensions.width);
   imageCropHeightInput.placeholder = String(dimensions.height);
+}
+
+function updateImageCropAspectRatio() {
   const requestedWidth = Number(imageCropWidthInput.value);
-  if (requestedWidth > 0) imageCropHeightInput.value = String(Math.max(1, Math.round(requestedWidth * dimensions.height / dimensions.width)));
+  const requestedHeight = Number(imageCropHeightInput.value);
+  if (requestedWidth <= 0 || requestedHeight <= 0) return;
+
+  const ratio = requestedWidth / requestedHeight;
+  const maximumWidth = imageCropImageBounds.x + imageCropImageBounds.width - imageCropDisplayRegion.x;
+  const maximumHeight = imageCropImageBounds.y + imageCropImageBounds.height - imageCropDisplayRegion.y;
+  const maximumWidthForRatio = Math.min(maximumWidth, maximumHeight * ratio);
+  const minimumWidth = Math.min(24, maximumWidthForRatio);
+  imageCropDisplayRegion.width = Math.max(minimumWidth, Math.min(imageCropDisplayRegion.width, maximumWidthForRatio));
+  imageCropDisplayRegion.height = imageCropDisplayRegion.width / ratio;
+  renderImageCropSelection();
+}
+
+function currentImageCropAspectRatio() {
+  const requestedWidth = Number(imageCropWidthInput.value);
+  const requestedHeight = Number(imageCropHeightInput.value);
+  if (requestedWidth > 0 && requestedHeight > 0) return requestedWidth / requestedHeight;
+  const dimensions = currentImageCropDimensions();
+  return dimensions ? dimensions.width / dimensions.height : null;
+}
+
+function setImageCropAspectLock() {
+  if (!imageCropAspectLock.checked) {
+    imageCropLockedAspectRatio = null;
+    return;
+  }
+  const dimensions = currentImageCropDimensions();
+  if (!dimensions) return;
+  const width = Number(imageCropWidthInput.value) || dimensions.width;
+  const height = Number(imageCropHeightInput.value) || dimensions.height;
+  imageCropWidthInput.value = String(width);
+  imageCropHeightInput.value = String(height);
+  imageCropLockedAspectRatio = width / height;
+  updateImageCropAspectRatio();
+}
+
+function updateLockedImageCropResolution(changedDimension: "width" | "height") {
+  if (imageCropAspectLock.checked) {
+    const ratio = imageCropLockedAspectRatio ?? currentImageCropAspectRatio();
+    const changedInput = changedDimension === "width" ? imageCropWidthInput : imageCropHeightInput;
+    const otherInput = changedDimension === "width" ? imageCropHeightInput : imageCropWidthInput;
+    const value = Number(changedInput.value);
+    if (ratio && value > 0) {
+      otherInput.value = String(Math.max(1, Math.round(changedDimension === "width" ? value / ratio : value * ratio)));
+    }
+  }
+  updateImageCropAspectRatio();
+}
+
+function resizeLockedImageCrop(handle: "x" | "y" | "corner" | null, deltaX: number, deltaY: number) {
+  if (!imageCropPointer) return;
+  const { region } = imageCropPointer;
+  const ratio = region.width / region.height;
+  const maximumWidth = imageCropImageBounds.x + imageCropImageBounds.width - region.x;
+  const maximumHeight = imageCropImageBounds.y + imageCropImageBounds.height - region.y;
+  const maximumWidthForRatio = Math.min(maximumWidth, maximumHeight * ratio);
+  const minimumWidth = Math.min(24, maximumWidthForRatio);
+  let width: number;
+
+  if (handle === "y") width = region.width + deltaY * ratio;
+  else if (handle === "corner") {
+    const widthScale = deltaX / region.width;
+    const heightScale = deltaY / region.height;
+    width = region.width * (1 + (Math.abs(widthScale) >= Math.abs(heightScale) ? widthScale : heightScale));
+  } else width = region.width + deltaX;
+
+  imageCropDisplayRegion.width = Math.max(minimumWidth, Math.min(width, maximumWidthForRatio));
+  imageCropDisplayRegion.height = imageCropDisplayRegion.width / ratio;
 }
 
 async function startFileCropping(path: string) {
   if (imageCropDialog.open || !imageDimensions.has(path)) return;
   imageCropPath = path;
+  const [sourceWidth, sourceHeight] = imageDimensions.get(path)!;
+  imageCropSourceDimensions.textContent = `原图 ${sourceWidth} × ${sourceHeight}`;
   imageCropDialog.showModal();
   imageCropImage.src = convertFileSrc(path);
   await new Promise<void>((resolve, reject) => {
@@ -309,6 +390,12 @@ async function startFileCropping(path: string) {
     imageCropImage.onerror = () => reject(new Error("无法加载待裁剪图片"));
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const previewScale = Math.min(
+    imageCropStage.clientWidth / imageCropImage.naturalWidth,
+    imageCropStage.clientHeight / imageCropImage.naturalHeight,
+  );
+  imageCropImage.style.width = `${Math.max(1, Math.floor(imageCropImage.naturalWidth * previewScale))}px`;
+  imageCropImage.style.height = `${Math.max(1, Math.floor(imageCropImage.naturalHeight * previewScale))}px`;
   const stageBounds = imageCropStage.getBoundingClientRect();
   const imageBounds = imageCropImage.getBoundingClientRect();
   imageCropImageBounds = { x: imageBounds.left - stageBounds.left, y: imageBounds.top - stageBounds.top, width: imageBounds.width, height: imageBounds.height };
@@ -439,14 +526,34 @@ icoCropDialog.addEventListener("cancel", (event) => {
 icoCropStage.addEventListener("pointerdown", (event) => {
   const target = event.target as HTMLElement;
   if (target !== icoCropSelection && !target.closest(".crop-handle")) return;
-  icoCropPointer = { startX: event.clientX, startY: event.clientY, region: { ...icoCropDisplayRegion } };
+  icoCropPointer = {
+    mode: target.closest(".crop-handle") ? "resize" : "move",
+    startX: event.clientX,
+    startY: event.clientY,
+    region: { ...icoCropDisplayRegion },
+  };
   icoCropStage.setPointerCapture(event.pointerId);
 });
 icoCropStage.addEventListener("pointermove", (event) => {
   if (!icoCropPointer) return;
+  if (icoCropPointer.mode === "move") {
+    const maximumX = icoCropImageBounds.x + icoCropImageBounds.width - icoCropPointer.region.width;
+    const maximumY = icoCropImageBounds.y + icoCropImageBounds.height - icoCropPointer.region.height;
+    icoCropDisplayRegion.x = Math.max(
+      icoCropImageBounds.x,
+      Math.min(icoCropPointer.region.x + event.clientX - icoCropPointer.startX, maximumX),
+    );
+    icoCropDisplayRegion.y = Math.max(
+      icoCropImageBounds.y,
+      Math.min(icoCropPointer.region.y + event.clientY - icoCropPointer.startY, maximumY),
+    );
+    renderIcoCropSelection();
+    return;
+  }
   const delta = Math.max(event.clientX - icoCropPointer.startX, event.clientY - icoCropPointer.startY);
   const maximumSize = Math.min(icoCropImageBounds.x + icoCropImageBounds.width - icoCropPointer.region.x, icoCropImageBounds.y + icoCropImageBounds.height - icoCropPointer.region.y);
-  const size = Math.max(24, Math.min(icoCropPointer.region.width + delta, maximumSize));
+  const minimumSize = Math.min(24, maximumSize);
+  const size = Math.max(minimumSize, Math.min(icoCropPointer.region.width + delta, maximumSize));
   icoCropDisplayRegion.width = size;
   icoCropDisplayRegion.height = size;
   renderIcoCropSelection();
@@ -477,22 +584,21 @@ imageCropStage.addEventListener("pointermove", (event) => {
   } else {
     const maximumWidth = imageCropImageBounds.x + imageCropImageBounds.width - imageCropPointer.region.x;
     const maximumHeight = imageCropImageBounds.y + imageCropImageBounds.height - imageCropPointer.region.y;
-    if (imageCropPointer.handle === "corner") {
+    if (imageCropAspectLock.checked) {
+      resizeLockedImageCrop(imageCropPointer.handle, deltaX, deltaY);
+    } else if (imageCropPointer.handle === "corner") {
       imageCropDisplayRegion.width = Math.max(24, Math.min(imageCropPointer.region.width + deltaX, maximumWidth));
       imageCropDisplayRegion.height = Math.max(24, Math.min(imageCropPointer.region.height + deltaY, maximumHeight));
     } else if (imageCropPointer.handle === "x") imageCropDisplayRegion.width = Math.max(24, Math.min(imageCropPointer.region.width + deltaX, maximumWidth));
     else imageCropDisplayRegion.height = Math.max(24, Math.min(imageCropPointer.region.height + deltaY, maximumHeight));
   }
-  updateImageCropResolution();
+  updateImageCropResolutionPlaceholders();
   renderImageCropSelection();
 });
 imageCropStage.addEventListener("pointerup", () => { imageCropPointer = null; });
-imageCropWidthInput.addEventListener("input", updateImageCropResolution);
-imageCropHeightInput.addEventListener("input", () => {
-  const dimensions = currentImageCropDimensions();
-  const requestedHeight = Number(imageCropHeightInput.value);
-  if (dimensions && requestedHeight > 0) imageCropWidthInput.value = String(Math.max(1, Math.round(requestedHeight * dimensions.width / dimensions.height)));
-});
+imageCropWidthInput.addEventListener("input", () => updateLockedImageCropResolution("width"));
+imageCropHeightInput.addEventListener("input", () => updateLockedImageCropResolution("height"));
+imageCropAspectLock.addEventListener("change", setImageCropAspectLock);
 void getCurrentWebviewWindow().onDragDropEvent((event) => {
   if (event.payload.type === "drop") void addSourcePaths(event.payload.paths);
 });
