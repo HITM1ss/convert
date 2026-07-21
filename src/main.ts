@@ -422,14 +422,6 @@ statusMessage.addEventListener("click", () => {
 });
 statusMessage.addEventListener("mouseenter", startStatusScroll);
 statusMessage.addEventListener("mouseleave", stopStatusScroll);
-byId("clear-button").addEventListener("click", () => {
-  sourcePaths = [];
-  fileSizes.clear();
-  imageDimensions.clear();
-  icoCropRegions.clear();
-  outputDimensions.clear();
-  renderFiles();
-});
 icoCropConfirm.addEventListener("click", () => {
   saveCurrentIcoCrop();
   icoCropIndex += 1;

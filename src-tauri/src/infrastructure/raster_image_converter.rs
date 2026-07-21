@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 
-use image::{imageops::FilterType, DynamicImage, ExtendedColorType, ImageEncoder, ImageFormat};
+use image::{imageops::FilterType, DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat, ImageReader};
 
 use crate::domain::conversion::{CompressionMode, CropRegion, OutputDimensions, SupportedFormat};
 
@@ -62,7 +62,7 @@ pub fn image_dimensions(source: &Path) -> Option<(u32, u32)> {
         let info = heif::probe(&encoded).ok()?;
         Some((info.width, info.height))
     } else {
-        image::image_dimensions(source).ok()
+        read_image(source).ok().map(|image| (image.width(), image.height()))
     }
 }
 
@@ -77,7 +77,16 @@ fn read_image(source: &Path) -> Result<DynamicImage, String> {
     if matches!(input_format, ImageFormat::Gif) {
         return Err("暂不支持动画图片转换。".to_owned());
     }
-    image::open(source).map_err(|error| format!("无法读取图片：{error}"))
+    let mut decoder = ImageReader::open(source)
+        .map_err(|error| format!("无法读取图片：{error}"))?
+        .into_decoder()
+        .map_err(|error| format!("无法读取图片：{error}"))?;
+    let orientation = decoder.orientation()
+        .map_err(|error| format!("无法读取图片方向信息：{error}"))?;
+    let mut image = DynamicImage::from_decoder(decoder)
+        .map_err(|error| format!("无法读取图片：{error}"))?;
+    image.apply_orientation(orientation);
+    Ok(image)
 }
 
 fn is_heif(source: &Path) -> bool {
