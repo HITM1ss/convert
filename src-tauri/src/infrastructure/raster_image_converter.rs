@@ -5,6 +5,7 @@ use std::path::Path;
 use image::{imageops::FilterType, DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat, ImageReader};
 
 use crate::domain::conversion::{CompressionMode, CropRegion, OutputDimensions, SupportedFormat};
+use crate::infrastructure::svg_converter::SvgConverter;
 
 pub struct RasterImageConverter;
 
@@ -67,7 +68,10 @@ pub fn image_dimensions(source: &Path) -> Option<(u32, u32)> {
     }
 }
 
-fn read_image(source: &Path) -> Result<DynamicImage, String> {
+pub fn read_image(source: &Path) -> Result<DynamicImage, String> {
+    if is_svg(source) {
+        return SvgConverter::rasterize(source);
+    }
     if is_heif(source) {
         let encoded = fs::read(source).map_err(|error| format!("无法读取 HEIC 图片：{error}"))?;
         return heif::decode(&encoded).map_err(|error| format!("无法解码 HEIC 图片：{error}"));
@@ -92,6 +96,10 @@ fn read_image(source: &Path) -> Result<DynamicImage, String> {
 
 fn is_heif(source: &Path) -> bool {
     matches!(source.extension().and_then(|extension| extension.to_str()), Some(extension) if extension.eq_ignore_ascii_case("heic") || extension.eq_ignore_ascii_case("heif"))
+}
+
+fn is_svg(source: &Path) -> bool {
+    matches!(source.extension().and_then(|extension| extension.to_str()), Some(extension) if extension.eq_ignore_ascii_case("svg"))
 }
 
 fn encode_lossy_webp(image: &DynamicImage, encoded: &mut Vec<u8>, quality: u8) -> image::ImageResult<()> {
@@ -140,6 +148,7 @@ fn image_format(format: SupportedFormat) -> ImageFormat {
         SupportedFormat::Ico => ImageFormat::Ico,
         SupportedFormat::Avif => ImageFormat::Avif,
         SupportedFormat::Heic => unreachable!("HEIC uses the dedicated heif encoder"),
+        SupportedFormat::Svg => unreachable!("SVG uses the dedicated vector converter"),
     }
 }
 

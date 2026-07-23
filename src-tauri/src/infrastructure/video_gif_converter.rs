@@ -1,5 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 pub struct VideoGifConverter;
@@ -42,6 +45,7 @@ impl VideoGifConverter {
         source: &Path,
         output: &Path,
         app_handle: &tauri::AppHandle,
+        cancellation_requested: &AtomicBool,
     ) -> Result<(), String> {
         let temporary = output.with_extension("tmp.gif");
         let filter = "fps=10,scale='min(960,iw)':-2:flags=lanczos,split[frames][palette];[palette]palettegen=max_colors=256[colors];[frames][colors]paletteuse=dither=sierra2_4a";
@@ -49,9 +53,8 @@ impl VideoGifConverter {
             .shell()
             .sidecar("ffmpeg")
             .map_err(|error| format!("应用内置的 FFmpeg 不可用，请重新安装 Format Forge：{error}"))?;
-        let result = tauri::async_runtime::block_on(
-            command
-                .args([
+        let (mut receiver, child) = command
+            .args([
                     "-hide_banner",
                     "-loglevel",
                     "error",
@@ -61,13 +64,30 @@ impl VideoGifConverter {
                 .arg(source)
                 .args(["-filter_complex", filter, "-loop", "0", "-f", "gif"])
                 .arg(&temporary)
-                .output(),
-        )
-        .map_err(|error| format!("无法启动应用内置的 FFmpeg：{error}"))?;
+                .spawn()
+            .map_err(|error| format!("无法启动应用内置的 FFmpeg：{error}"))?;
+        let mut stderr = Vec::new();
+        let completed = tauri::async_runtime::block_on(async {
+            loop {
+                if cancellation_requested.load(Ordering::Relaxed) {
+                    let _ = child.kill();
+                    return Err("已停止".to_owned());
+                }
+                match tokio::time::timeout(Duration::from_millis(80), receiver.recv()).await {
+                    Ok(Some(CommandEvent::Stderr(output))) => stderr.extend(output),
+                    Ok(Some(CommandEvent::Terminated(status))) => return Ok(status.code == Some(0)),
+                    Ok(Some(CommandEvent::Error(error))) => return Err(error),
+                    Ok(Some(_)) | Err(_) => {}
+                    Ok(None) => return Ok(false),
+                }
+            }
+        });
 
-        if !result.status.success() {
+        let succeeded = completed?;
+
+        if !succeeded {
             let _ = fs::remove_file(&temporary);
-            let message = String::from_utf8_lossy(&result.stderr).trim().to_owned();
+            let message = String::from_utf8_lossy(&stderr).trim().to_owned();
             return Err(if message.is_empty() {
                 "FFmpeg 未能转换该视频。".to_owned()
             } else {

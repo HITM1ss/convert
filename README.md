@@ -1,6 +1,6 @@
 # Format Forge
 
-离线、跨平台的图片与视频格式转换器。支持批量转换 JPG、PNG、WebP、BMP、TIFF、ICO、AVIF 和 iPhone 常用的 HEIC/HEIF；也可将 MP4、MOV、M4V、AVI、MKV、WebM 视频转换为 GIF。所有文件仅在本机处理，源文件不会被覆盖。
+离线、跨平台的图片与视频格式转换器。支持批量转换 JPG、PNG、WebP、BMP、TIFF、ICO、AVIF、SVG 和 iPhone 常用的 HEIC/HEIF；也可将 MP4、MOV、M4V、AVI、MKV、WebM 视频转换为 GIF。所有文件仅在本机处理，源文件不会被覆盖。
 
 ![Format Forge v0.1.3界面预览](doc/0.1.3.png)
 
@@ -38,6 +38,8 @@ npm run tauri build
 ## 支持转换的文件格式
 
 支持静态图片格式互转，包括图片转 GIF；也支持将 MP4、MOV、M4V、AVI、MKV、WebM 转换为 GIF。应用会根据所选文件自动判断转换方式：图片直接编码为 GIF，视频通过安装包内置的 [FFmpeg](https://ffmpeg.org/) 转换，无需在系统中安装或配置 `PATH`。视频 GIF 以 10 FPS 导出，最长边限制为 960px，以控制文件体积。
+
+静态图片可导出为 SVG。导出时使用内置 VTracer 离线矢量化，生成包含真实 `<path>` 元素的 SVG，而不是嵌入原始位图。图标、Logo、插画和线稿通常效果最佳；照片会被近似为多个彩色路径，因此输出文件可能较大。导入 SVG 后可转换为任意支持的静态图片格式，渲染过程不会访问网络。GIF 和视频不能导出 SVG。
 
 损坏、无法识别或无法写入的文件会在任务列表中显示失败原因。输出目录由用户选择，同名文件自动增加序号。
 

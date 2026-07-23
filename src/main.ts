@@ -1,17 +1,16 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-type Format = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic";
-type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed"; message?: string };
+type Format = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic" | "svg";
+type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed" | "cancelled"; message?: string };
 type Dimensions = [number, number];
 type CropRegion = { x: number; y: number; width: number; height: number };
 type OutputDimensions = { width: number; height: number };
 type CompressionMode = "lossy" | "lossless";
 
-const formats: Record<Format, string> = { jpeg: "JPG", gif: "GIF", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC" };
+const formats: Record<Format, string> = { jpeg: "JPG", gif: "GIF", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC", svg: "SVG" };
 let sourcePaths: string[] = [];
 let outputDirectory = "";
 
@@ -48,6 +47,7 @@ const icoCropRegions = new Map<string, CropRegion>();
 const outputDimensions = new Map<string, OutputDimensions>();
 const taskResults = new Map<string, Result>();
 let isConverting = false;
+let isStopping = false;
 let statusScrollFrame: number | undefined;
 let icoCropQueue: string[] = [];
 let icoCropIndex = 0;
@@ -73,8 +73,12 @@ function isVideoPath(path: string) {
   return /\.(mp4|mov|m4v|avi|mkv|webm)$/i.test(path);
 }
 
+function isGifPath(path: string) {
+  return /\.gif$/i.test(path);
+}
+
 function importExtensions() {
-  return ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif", "mp4", "mov", "m4v", "avi", "mkv", "webm"];
+  return ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif", "svg", "mp4", "mov", "m4v", "avi", "mkv", "webm"];
 }
 
 function isSupportedImport(path: string) {
@@ -133,6 +137,13 @@ function startStatusScroll() {
 }
 
 function renderExportControl() {
+  if (isConverting) {
+    convertButton.disabled = false;
+    convertButton.innerHTML = '<span>停止</span><span aria-hidden="true">&#9632;</span>';
+    convertButton.title = "停止转换";
+    convertButton.setAttribute("aria-label", "停止转换");
+    return;
+  }
   const label = outputDirectory ? "转换" : "选择路径";
   convertButton.innerHTML = `<span>${label}</span><span aria-hidden="true">&#8594;</span>`;
   convertButton.title = outputDirectory ? "转换" : "选择导出路径";
@@ -148,7 +159,7 @@ function renderTaskQueue() {
     ? sourcePaths.map((path, index) => {
       const result = taskResults.get(path);
       const name = path.split(/[\\/]/).pop() ?? path;
-      const state = result ? (result.status === "completed" ? "完成" : "失败") : isConverting && index === completed ? "转换中" : "等待";
+      const state = result ? (result.status === "completed" ? "完成" : result.status === "cancelled" ? "已停止" : "失败") : isConverting && index === completed ? "转换中" : "等待";
       const details = result?.status === "completed"
         ? `${formats[targetFormat]} · ${formatFileSize(fileSizes.get(path))} &#8594; ${formatFileSize(result.outputSize)}`
         : formats[targetFormat];
@@ -166,7 +177,7 @@ function renderFiles(results: Result[] = []) {
   const fileRows = sourcePaths.map((path, index) => {
     const result = resultByPath.get(path);
     const name = path.split(/[\\/]/).pop() ?? path;
-    const state = result ? (result.status === "completed" ? "完成" : result.message ?? "失败") : "待处理";
+    const state = result ? (result.status === "completed" ? "完成" : result.status === "cancelled" ? "已停止" : result.message ?? "失败") : "待处理";
       const thumbnail = isVideoPath(path)
         ? videoThumbnail(path)
       : `<img src="${convertFileSrc(path)}" alt="" />`;
@@ -179,7 +190,7 @@ function renderFiles(results: Result[] = []) {
     ? `${fileRows}<button class="add-file-button" type="button"><span aria-hidden="true">+</span>添加文件</button>`
     : '<button class="empty-state" type="button"><span>打开</span>/拖入文件</button>';
   byId("file-count").textContent = String(sourcePaths.length);
-  convertButton.disabled = !sourcePaths.length;
+  convertButton.disabled = !sourcePaths.length && !isConverting;
   renderExportControl();
   renderTaskQueue();
 }
@@ -220,24 +231,51 @@ async function chooseOutputDirectory(): Promise<boolean> {
 }
 
 async function convert() {
+  if (isConverting) {
+    if (isStopping) return;
+    isStopping = true;
+    convertButton.disabled = true;
+    statusMessage.textContent = "正在停止转换...";
+    try {
+      await invoke("stop_conversion");
+    } catch (error) {
+      isStopping = false;
+      renderExportControl();
+      statusMessage.textContent = `无法停止转换：${String(error)}`;
+    }
+    return;
+  }
   if (!sourcePaths.length) return;
   if (!outputDirectory) {
     await chooseOutputDirectory();
+    return;
+  }
+  if (targetFormat === "svg" && sourcePaths.some((path) => isVideoPath(path) || isGifPath(path))) {
+    statusMessage.textContent = "SVG 仅支持静态图片；GIF 和视频无法转换为路径 SVG。";
     return;
   }
   if (targetFormat === "ico" && await startIcoCropping()) return;
   convertButton.disabled = true;
   isConverting = true;
   taskResults.clear();
+  renderExportControl();
   renderTaskQueue();
-  statusMessage.textContent = "转换中，点击打开日志文件夹";
+  statusMessage.textContent = "转换中...";
   const cropRegions = Object.fromEntries(icoCropRegions);
-  const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(qualityInput.value), compressionMode: selectedCompressionMode, cropRegions, outputDimensions: Object.fromEntries(outputDimensions), icoSize } });
-  isConverting = false;
-  results.forEach((result) => taskResults.set(result.sourcePath, result));
-  renderFiles(results);
-  const completed = results.filter((result) => result.status === "completed").length;
-  statusMessage.textContent = `已完成 ${completed}/${results.length}，点击打开日志文件夹`;
+  try {
+    const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(qualityInput.value), compressionMode: selectedCompressionMode, cropRegions, outputDimensions: Object.fromEntries(outputDimensions), icoSize } });
+    results.forEach((result) => taskResults.set(result.sourcePath, result));
+    renderFiles(results);
+    const completed = results.filter((result) => result.status === "completed").length;
+    const cancelled = results.filter((result) => result.status === "cancelled").length;
+    statusMessage.textContent = cancelled ? `已完成 ${completed}/${results.length}，已停止 ${cancelled} 项` : `已完成 ${completed}/${results.length}`;
+  } catch (error) {
+    statusMessage.textContent = `转换失败：${String(error)}`;
+  } finally {
+    isConverting = false;
+    isStopping = false;
+    renderFiles([...taskResults.values()]);
+  }
 }
 
 function renderFormats() {
@@ -250,7 +288,7 @@ function renderCompressionMode() {
   const isSupported = targetFormat === "webp";
   compressionMode.classList.toggle("is-disabled", !isSupported);
   compressionMode.classList.toggle("is-lossless", selectedCompressionMode === "lossless");
-  qualityInput.disabled = targetFormat === "gif" || (isSupported && selectedCompressionMode === "lossless");
+  qualityInput.disabled = targetFormat === "gif" || targetFormat === "svg" || (isSupported && selectedCompressionMode === "lossless");
   compressionMode.querySelectorAll<HTMLButtonElement>("[data-compression-mode]").forEach((button) => {
     button.disabled = !isSupported;
     button.classList.toggle("is-active", button.dataset.compressionMode === selectedCompressionMode);
@@ -541,11 +579,15 @@ byId("convert-button").addEventListener("click", () => void convert());
 statusMessage.addEventListener("click", () => {
   void (async () => {
     try {
-      const directory = await invoke<string>("log_directory");
-      const result = await openPath(directory);
-      statusMessage.textContent = result === null ? "已打开日志文件夹" : `无法打开日志文件夹：${result}`;
+      const message = statusMessage.textContent?.trim();
+      if (!message) {
+        statusMessage.textContent = "当前没有可复制的信息";
+        return;
+      }
+      await navigator.clipboard.writeText(message);
+      statusMessage.textContent = "已复制当前信息";
     } catch (error) {
-      statusMessage.textContent = `无法打开日志文件夹：${String(error)}`;
+      statusMessage.textContent = `无法复制当前信息：${String(error)}`;
     }
   })();
 });
