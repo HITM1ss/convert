@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type ImageFormat = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic" | "svg";
 type VideoFormat = "mp4" | "webm" | "mov";
@@ -22,6 +23,8 @@ let outputDirectory = "";
 
 const byId = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
 const fileList = byId<HTMLDivElement>("file-list");
+const appWindow = getCurrentWebviewWindow();
+const nativeWindow = getCurrentWindow();
 const imageOptions = byId<HTMLDivElement>("image-options");
 const imageQualityInput = byId<HTMLInputElement>("quality-input");
 const imageQualityValue = byId<HTMLOutputElement>("quality-value");
@@ -244,7 +247,6 @@ function renderFiles(results: Result[] = []) {
   fileList.innerHTML = fileRows
     ? `${fileRows}<button class="add-file-button" type="button"><span aria-hidden="true">+</span>添加文件</button>`
     : '<button class="empty-state" type="button"><span>打开</span>/拖入文件</button>';
-  byId("file-count").textContent = String(sourcePaths.length);
   convertButton.disabled = !sourcePaths.length && !isConverting;
   renderExportControl();
   renderTaskQueue();
@@ -619,6 +621,24 @@ function cancelIcoCropping() {
   renderTaskQueue();
 }
 
+byId("title-bar").addEventListener("pointerdown", (event) => {
+  if ((event.target as HTMLElement).closest("button")) return;
+  void nativeWindow.startDragging();
+});
+document.querySelectorAll<HTMLButtonElement>(".window-control").forEach((button) => {
+  button.addEventListener("pointerdown", (event) => event.stopPropagation());
+});
+byId("window-minimize").addEventListener("click", () => void nativeWindow.minimize());
+byId("window-maximize").addEventListener("click", () => {
+  void nativeWindow.toggleMaximize().then(async () => {
+    const maximized = await nativeWindow.isMaximized();
+    const button = byId<HTMLButtonElement>("window-maximize");
+    button.title = maximized ? "还原窗口" : "最大化";
+    button.setAttribute("aria-label", button.title);
+    button.querySelector("span")!.textContent = maximized ? "❐" : "□";
+  });
+});
+byId("window-close").addEventListener("click", () => void nativeWindow.close());
 imageQualityInput.addEventListener("input", () => imageQualityValue.textContent = imageQualityInput.value);
 videoQualityInput.addEventListener("input", () => videoQualityValue.textContent = videoQualityInput.value);
 compressionMode.addEventListener("click", (event) => {
@@ -787,7 +807,7 @@ imageCropStage.addEventListener("pointerup", () => { imageCropPointer = null; })
 imageCropWidthInput.addEventListener("input", () => updateLockedImageCropResolution("width"));
 imageCropHeightInput.addEventListener("input", () => updateLockedImageCropResolution("height"));
 imageCropAspectLock.addEventListener("change", setImageCropAspectLock);
-void getCurrentWebviewWindow().onDragDropEvent((event) => {
+void appWindow.onDragDropEvent((event) => {
   if (event.payload.type === "drop") void addSourcePaths(event.payload.paths);
 });
 void listen<Result>("conversion-progress", ({ payload }) => {
