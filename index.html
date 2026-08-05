@@ -10,22 +10,34 @@
 
   <body>
     <main class="app-shell">
-      <aside class="format-sidebar" aria-label="图片类型">
-        <section class="format-section">
+      <aside class="format-sidebar" id="format-sidebar" aria-label="输出格式">
+        <section class="format-section" id="image-format-section">
           <button class="sidebar-section-title" id="format-section-toggle" aria-expanded="true" aria-controls="format-nav">图片<span class="format-section-indicator" aria-hidden="true"></span></button>
           <nav class="format-nav" id="format-nav"></nav>
+        </section>
+        <section class="format-section video-format-section" id="video-format-section">
+          <button class="sidebar-section-title" id="video-section-toggle" aria-expanded="true" aria-controls="video-format-nav">视频<span class="format-section-indicator" aria-hidden="true"></span></button>
+          <nav class="format-nav" id="video-format-nav"></nav>
         </section>
       </aside>
       <section class="workspace">
         <div class="file-list" id="file-list" aria-live="polite"></div>
         <footer class="conversion-bar">
-          <div class="compression-mode" id="compression-mode" aria-label="压缩模式">
-            <span class="compression-mode-indicator" aria-hidden="true"></span>
-            <button class="compression-mode-button is-active" type="button" data-compression-mode="lossy">有损</button>
-            <button class="compression-mode-button" type="button" data-compression-mode="lossless">无损</button>
+          <div class="image-options" id="image-options">
+            <div class="compression-mode" id="compression-mode" aria-label="压缩模式">
+              <span class="compression-mode-indicator" aria-hidden="true"></span>
+              <button class="compression-mode-button is-active" type="button" data-compression-mode="lossy">有损</button>
+              <button class="compression-mode-button" type="button" data-compression-mode="lossless">无损</button>
+            </div>
+            <input id="quality-input" type="range" min="0" max="100" value="88" aria-label="图片质量" />
+            <output id="quality-value">88</output>
           </div>
-          <input id="quality-input" type="range" min="0" max="100" value="88" aria-label="图片质量" />
-          <output id="quality-value">88</output>
+          <div class="video-options" id="video-options" hidden>
+            <label>质量<input id="video-quality-input" type="range" min="0" max="100" value="88" aria-label="视频质量" /></label>
+            <output id="video-quality-value">88</output>
+            <label>分辨率<select aria-label="视频分辨率"><option value="source">原始</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label>
+            <label>帧率<select aria-label="视频帧率"><option value="source">原始</option><option value="60">60 fps</option><option value="30">30 fps</option><option value="24">24 fps</option></select></label>
+          </div>
           <span id="file-count">0</span>
           <button class="convert-button" id="convert-button" disabled title="选择导出路径" aria-label="选择导出路径"><span>选择路径</span><span aria-hidden="true">&#8594;</span></button>
         </footer>
@@ -37,7 +49,7 @@
         </header>
         <div class="task-queue-list" id="task-queue-list" aria-live="polite"></div>
       </aside>
-      <button class="message-bar" id="status-message" type="button" title="打开日志文件夹" aria-label="打开日志文件夹" aria-live="polite">准备就绪</button>
+      <button class="message-bar" id="status-message" type="button" title="复制当前信息" aria-label="复制当前信息" aria-live="polite">准备就绪</button>
     </main>
     <dialog class="crop-dialog" id="ico-crop-dialog" aria-label="裁剪图片">
       <form method="dialog" class="crop-dialog-content">

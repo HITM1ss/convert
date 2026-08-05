@@ -1,27 +1,41 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-type Format = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic" | "svg";
+type ImageFormat = "jpeg" | "gif" | "png" | "webp" | "bmp" | "tiff" | "ico" | "avif" | "heic" | "svg";
+type VideoFormat = "mp4" | "webm" | "mov";
+type Format = ImageFormat | VideoFormat;
 type Result = { sourcePath: string; outputPath?: string; outputSize?: number; status: "completed" | "failed" | "cancelled"; message?: string };
 type Dimensions = [number, number];
 type CropRegion = { x: number; y: number; width: number; height: number };
 type OutputDimensions = { width: number; height: number };
 type CompressionMode = "lossy" | "lossless";
 
-const formats: Record<Format, string> = { jpeg: "JPG", gif: "GIF", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC", svg: "SVG" };
+const imageFormats: Record<ImageFormat, string> = { jpeg: "JPG", gif: "GIF", png: "PNG", webp: "WebP", bmp: "BMP", tiff: "TIFF", ico: "ICO", avif: "AVIF", heic: "HEIC", svg: "SVG" };
+const videoFormats: Record<VideoFormat, string> = { mp4: "MP4", webm: "WebM", mov: "MOV" };
+const formats: Record<Format, string> = { ...imageFormats, ...videoFormats };
 let sourcePaths: string[] = [];
 let outputDirectory = "";
 
 const byId = <T extends HTMLElement>(id: string) => document.querySelector<T>(`#${id}`)!;
 const fileList = byId<HTMLDivElement>("file-list");
-const qualityInput = byId<HTMLInputElement>("quality-input");
+const imageOptions = byId<HTMLDivElement>("image-options");
+const imageQualityInput = byId<HTMLInputElement>("quality-input");
+const imageQualityValue = byId<HTMLOutputElement>("quality-value");
+const videoQualityInput = byId<HTMLInputElement>("video-quality-input");
+const videoQualityValue = byId<HTMLOutputElement>("video-quality-value");
 const compressionMode = byId<HTMLDivElement>("compression-mode");
+const videoOptions = byId<HTMLDivElement>("video-options");
 const convertButton = byId<HTMLButtonElement>("convert-button");
 const statusMessage = byId<HTMLButtonElement>("status-message");
 const formatNav = byId<HTMLElement>("format-nav");
 const formatSectionToggle = byId<HTMLButtonElement>("format-section-toggle");
+const formatSidebar = byId<HTMLElement>("format-sidebar");
+const imageFormatSection = byId<HTMLElement>("image-format-section");
+const videoFormatSection = byId<HTMLElement>("video-format-section");
 const icoCropDialog = byId<HTMLDialogElement>("ico-crop-dialog");
 const icoCropImage = byId<HTMLImageElement>("ico-crop-image");
 const icoCropStage = byId<HTMLDivElement>("ico-crop-stage");
@@ -39,7 +53,8 @@ const imageCropSourceDimensions = byId<HTMLSpanElement>("image-crop-source-dimen
 const icoSizeOptions = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="ico-size"]'));
 let targetFormat: Format = "jpeg";
 let selectedCompressionMode: CompressionMode = "lossy";
-let isFormatSectionExpanded = true;
+let activeFormatCategory: "image" | "video" = "image";
+let formatCategoryAnimationFrame: number | undefined;
 const fileSizes = new Map<string, number>();
 const imageDimensions = new Map<string, Dimensions>();
 const videoThumbnails = new Map<string, string>();
@@ -49,6 +64,7 @@ const taskResults = new Map<string, Result>();
 let isConverting = false;
 let isStopping = false;
 let statusScrollFrame: number | undefined;
+let statusLink: string | undefined;
 let icoCropQueue: string[] = [];
 let icoCropIndex = 0;
 let formatBeforeIco: Format = "jpeg";
@@ -69,8 +85,47 @@ function formatFileSize(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function setStatusMessage(message: string, link?: string) {
+  statusMessage.textContent = message;
+  statusLink = link;
+  statusMessage.title = link ? "打开 GitHub 仓库" : "复制当前信息";
+  statusMessage.setAttribute("aria-label", statusMessage.title);
+}
+
+function isNewerVersion(latest: string, current: string) {
+  const parse = (version: string) => version.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const latestParts = parse(latest);
+  const currentParts = parse(current);
+  const length = Math.max(latestParts.length, currentParts.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((latestParts[index] ?? 0) !== (currentParts[index] ?? 0)) return (latestParts[index] ?? 0) > (currentParts[index] ?? 0);
+  }
+  return false;
+}
+
+async function checkForNewVersion() {
+  try {
+    const response = await fetch("https://api.github.com/repos/HITM1ss/convert/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return;
+    const release = await response.json() as { tag_name?: string };
+    const currentVersion = await getVersion();
+    if (release.tag_name && isNewerVersion(release.tag_name, currentVersion)) {
+      setStatusMessage("当前有新版本发布", "https://github.com/HITM1ss/convert");
+    }
+  } catch {
+    // The update check is optional and must not affect offline conversion.
+  }
+}
+
 function isVideoPath(path: string) {
   return /\.(mp4|mov|m4v|avi|mkv|webm)$/i.test(path);
+}
+
+function isVideoFormat(format: Format): format is VideoFormat {
+  return format in videoFormats;
 }
 
 function isGifPath(path: string) {
@@ -235,23 +290,27 @@ async function convert() {
     if (isStopping) return;
     isStopping = true;
     convertButton.disabled = true;
-    statusMessage.textContent = "正在停止转换...";
+    setStatusMessage("正在停止转换...");
     try {
       await invoke("stop_conversion");
     } catch (error) {
       isStopping = false;
       renderExportControl();
-      statusMessage.textContent = `无法停止转换：${String(error)}`;
+      setStatusMessage(`无法停止转换：${String(error)}`);
     }
     return;
   }
   if (!sourcePaths.length) return;
+  if (isVideoFormat(targetFormat)) {
+    setStatusMessage("视频格式转换引擎尚未接入；当前仅提供界面设置。");
+    return;
+  }
   if (!outputDirectory) {
     await chooseOutputDirectory();
     return;
   }
   if (targetFormat === "svg" && sourcePaths.some((path) => isVideoPath(path) || isGifPath(path))) {
-    statusMessage.textContent = "SVG 仅支持静态图片；GIF 和视频无法转换为路径 SVG。";
+    setStatusMessage("SVG 仅支持静态图片；GIF 和视频无法转换为路径 SVG。");
     return;
   }
   if (targetFormat === "ico" && await startIcoCropping()) return;
@@ -260,17 +319,17 @@ async function convert() {
   taskResults.clear();
   renderExportControl();
   renderTaskQueue();
-  statusMessage.textContent = "转换中...";
+  setStatusMessage("转换中...");
   const cropRegions = Object.fromEntries(icoCropRegions);
   try {
-    const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(qualityInput.value), compressionMode: selectedCompressionMode, cropRegions, outputDimensions: Object.fromEntries(outputDimensions), icoSize } });
+    const results = await invoke<Result[]>("convert_images", { request: { sourcePaths, outputDirectory, targetFormat, quality: Number(imageQualityInput.value), compressionMode: selectedCompressionMode, cropRegions, outputDimensions: Object.fromEntries(outputDimensions), icoSize } });
     results.forEach((result) => taskResults.set(result.sourcePath, result));
     renderFiles(results);
     const completed = results.filter((result) => result.status === "completed").length;
     const cancelled = results.filter((result) => result.status === "cancelled").length;
-    statusMessage.textContent = cancelled ? `已完成 ${completed}/${results.length}，已停止 ${cancelled} 项` : `已完成 ${completed}/${results.length}`;
+    setStatusMessage(cancelled ? `已完成 ${completed}/${results.length}，已停止 ${cancelled} 项` : `已完成 ${completed}/${results.length}`);
   } catch (error) {
-    statusMessage.textContent = `转换失败：${String(error)}`;
+    setStatusMessage(`转换失败：${String(error)}`);
   } finally {
     isConverting = false;
     isStopping = false;
@@ -279,26 +338,54 @@ async function convert() {
 }
 
 function renderFormats() {
-  formatNav.innerHTML = Object.entries(formats).map(([value, label]) =>
+  formatNav.innerHTML = Object.entries(imageFormats).map(([value, label]) =>
+    `<button class="format-button ${value === targetFormat ? "is-active" : ""}" data-format="${value}">${label}</button>`
+  ).join("");
+}
+
+function renderVideoFormats() {
+  const videoFormatNav = byId<HTMLElement>("video-format-nav");
+  videoFormatNav.innerHTML = Object.entries(videoFormats).map(([value, label]) =>
     `<button class="format-button ${value === targetFormat ? "is-active" : ""}" data-format="${value}">${label}</button>`
   ).join("");
 }
 
 function renderCompressionMode() {
+  if (isVideoFormat(targetFormat)) {
+    imageOptions.hidden = true;
+    videoOptions.hidden = false;
+    return;
+  }
+  imageOptions.hidden = false;
+  videoOptions.hidden = true;
   const isSupported = targetFormat === "webp";
   compressionMode.classList.toggle("is-disabled", !isSupported);
   compressionMode.classList.toggle("is-lossless", selectedCompressionMode === "lossless");
-  qualityInput.disabled = targetFormat === "gif" || targetFormat === "svg" || (isSupported && selectedCompressionMode === "lossless");
+  imageQualityInput.disabled = targetFormat === "gif" || targetFormat === "svg" || (isSupported && selectedCompressionMode === "lossless");
   compressionMode.querySelectorAll<HTMLButtonElement>("[data-compression-mode]").forEach((button) => {
     button.disabled = !isSupported;
     button.classList.toggle("is-active", button.dataset.compressionMode === selectedCompressionMode);
   });
 }
 
-function setFormatSectionExpanded(isExpanded: boolean) {
-  isFormatSectionExpanded = isExpanded;
-  formatSectionToggle.setAttribute("aria-expanded", String(isExpanded));
-  formatNav.classList.toggle("is-collapsed", !isExpanded);
+function setActiveFormatCategory(category: "image" | "video") {
+  activeFormatCategory = category;
+  const isVideoActive = category === "video";
+  const videoSectionToggle = byId<HTMLButtonElement>("video-section-toggle");
+  const videoFormatNav = byId("video-format-nav");
+  const activeNav = isVideoActive ? videoFormatNav : formatNav;
+  formatSidebar.prepend(isVideoActive ? videoFormatSection : imageFormatSection);
+  formatSectionToggle.setAttribute("aria-expanded", "false");
+  videoSectionToggle.setAttribute("aria-expanded", "false");
+  formatNav.classList.add("is-collapsed");
+  videoFormatNav.classList.add("is-collapsed");
+  if (formatCategoryAnimationFrame !== undefined) cancelAnimationFrame(formatCategoryAnimationFrame);
+  formatCategoryAnimationFrame = requestAnimationFrame(() => {
+    if (activeFormatCategory !== category) return;
+    (isVideoActive ? videoSectionToggle : formatSectionToggle).setAttribute("aria-expanded", "true");
+    activeNav.classList.remove("is-collapsed");
+    formatCategoryAnimationFrame = undefined;
+  });
 }
 
 function isIcoCropRequired(path: string) {
@@ -532,7 +619,8 @@ function cancelIcoCropping() {
   renderTaskQueue();
 }
 
-qualityInput.addEventListener("input", () => byId("quality-value").textContent = qualityInput.value);
+imageQualityInput.addEventListener("input", () => imageQualityValue.textContent = imageQualityInput.value);
+videoQualityInput.addEventListener("input", () => videoQualityValue.textContent = videoQualityInput.value);
 compressionMode.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-compression-mode]");
   if (!button || button.disabled) return;
@@ -550,8 +638,20 @@ formatNav.addEventListener("click", (event) => {
   renderTaskQueue();
   if (targetFormat === "ico") void startIcoCropping();
 });
+byId("video-format-nav").addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-format]");
+  if (!button) return;
+  targetFormat = button.dataset.format as VideoFormat;
+  renderFormats();
+  renderVideoFormats();
+  renderCompressionMode();
+  renderTaskQueue();
+});
 formatSectionToggle.addEventListener("click", () => {
-  setFormatSectionExpanded(!isFormatSectionExpanded);
+  setActiveFormatCategory("image");
+});
+byId("video-section-toggle").addEventListener("click", () => {
+  setActiveFormatCategory("video");
 });
 fileList.addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest(".empty-state, .add-file-button")) void addFiles();
@@ -579,15 +679,19 @@ byId("convert-button").addEventListener("click", () => void convert());
 statusMessage.addEventListener("click", () => {
   void (async () => {
     try {
+      if (statusLink) {
+        await openUrl(statusLink);
+        return;
+      }
       const message = statusMessage.textContent?.trim();
       if (!message) {
-        statusMessage.textContent = "当前没有可复制的信息";
+        setStatusMessage("当前没有可复制的信息");
         return;
       }
       await navigator.clipboard.writeText(message);
-      statusMessage.textContent = "已复制当前信息";
+      setStatusMessage("已复制当前信息");
     } catch (error) {
-      statusMessage.textContent = `无法复制当前信息：${String(error)}`;
+      setStatusMessage(`无法复制当前信息：${String(error)}`);
     }
   })();
 });
@@ -691,5 +795,8 @@ void listen<Result>("conversion-progress", ({ payload }) => {
   renderTaskQueue();
 });
 renderFormats();
+renderVideoFormats();
+setActiveFormatCategory(activeFormatCategory);
 renderCompressionMode();
 renderFiles();
+void checkForNewVersion();
