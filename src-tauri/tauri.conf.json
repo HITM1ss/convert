@@ -11,9 +11,12 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Format Forge",
+        "decorations": false,
+        "transparent": true,
         "width": 1080,
         "height": 720,
         "minWidth": 760,
