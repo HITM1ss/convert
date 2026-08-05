@@ -10,6 +10,17 @@
 
   <body>
     <main class="app-shell">
+      <header class="title-bar" id="title-bar">
+        <div class="title-bar-brand">
+          <span class="title-bar-mark" aria-hidden="true">F</span>
+          <span>Format Forge</span>
+        </div>
+        <div class="window-controls" aria-label="窗口控制">
+          <button class="window-control" id="window-minimize" type="button" title="最小化" aria-label="最小化"><span aria-hidden="true">−</span></button>
+          <button class="window-control" id="window-maximize" type="button" title="最大化" aria-label="最大化"><span aria-hidden="true">□</span></button>
+          <button class="window-control window-close" id="window-close" type="button" title="关闭" aria-label="关闭"><span aria-hidden="true">×</span></button>
+        </div>
+      </header>
       <aside class="format-sidebar" id="format-sidebar" aria-label="输出格式">
         <section class="format-section" id="image-format-section">
           <button class="sidebar-section-title" id="format-section-toggle" aria-expanded="true" aria-controls="format-nav">图片<span class="format-section-indicator" aria-hidden="true"></span></button>
@@ -38,7 +49,6 @@
             <label>分辨率<select aria-label="视频分辨率"><option value="source">原始</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label>
             <label>帧率<select aria-label="视频帧率"><option value="source">原始</option><option value="60">60 fps</option><option value="30">30 fps</option><option value="24">24 fps</option></select></label>
           </div>
-          <span id="file-count">0</span>
           <button class="convert-button" id="convert-button" disabled title="选择导出路径" aria-label="选择导出路径"><span>选择路径</span><span aria-hidden="true">&#8594;</span></button>
         </footer>
       </section>
